@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">
+  <defs>
+    <linearGradient id="g2" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#1a2649"/>
+      <stop offset="1" stop-color="#5a74a8"/>
+    </linearGradient>
+    <linearGradient id="line2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.02"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="560" fill="url(#g2)"/>
+  <g opacity="0.9">
+    <rect x="60" y="-40" width="34" height="660" fill="url(#line2)" transform="rotate(18 60 280)"/>
+    <rect x="180" y="-40" width="34" height="660" fill="url(#line2)" transform="rotate(18 180 280)"/>
+    <rect x="300" y="-40" width="34" height="660" fill="url(#line2)" transform="rotate(18 300 280)"/>
+    <rect x="420" y="-40" width="34" height="660" fill="url(#line2)" transform="rotate(18 420 280)"/>
+    <rect x="540" y="-40" width="34" height="660" fill="url(#line2)" transform="rotate(18 540 280)"/>
+    <rect x="660" y="-40" width="34" height="660" fill="url(#line2)" transform="rotate(18 660 280)"/>
+    <rect x="780" y="-40" width="34" height="660" fill="url(#line2)" transform="rotate(18 780 280)"/>
+  </g>
+  <circle cx="120" cy="140" r="190" fill="#ffffff" opacity="0.07"/>
+  <rect x="470" y="356" width="330" height="112" rx="16" fill="#fafafc" opacity="0.93"/>
+  <rect x="500" y="388" width="220" height="16" rx="8" fill="#3d4a73" opacity="0.55"/>
+  <rect x="500" y="420" width="150" height="12" rx="6" fill="#3d4a73" opacity="0.30"/>
+</svg>

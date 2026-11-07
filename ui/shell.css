@@ -1,0 +1,176 @@
+/* ── 桌面壳专用样式 ────────────────────────────────────────────────
+   只在 Tauri 里生效（shell.js 给 <html> 打 .app）。
+   浏览器打开原型时这些规则一条都不会命中。                              */
+
+html.app,
+html.app body {
+  background: transparent !important;
+}
+
+/* 原型里的假桌面：壁纸、假图标、操作说明、预览提示，装进真窗口后全不要 */
+html.app .desktop { background: none !important; }
+html.app .wall-note,
+html.app .desk-icons,
+html.app .stage-hint { display: none !important; }
+
+/* 窗口宽度 = 面板宽度 + 阴影留白，别再让 100vw 把面板夹窄 */
+html.app .drawer { max-width: none !important; }
+
+/* 悬浮窗：面板在窗口里居中，四周留 16px 给阴影；
+   位置由窗口本身负责，所以把原型那套 left/top 定位让开 */
+html.app body.float .drawer {
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  width: auto;
+}
+html.app body.float .drawer.collapsed {
+  transform: translate(-50%, -8px) scale(.982);
+  transition: none;
+}
+/* 窗口 54×54，球 46×46 居中，四周各留 4px */
+html.app body.float .ball {
+  left: auto;
+  right: 4px;
+  top: 4px;
+  margin: 0;
+}
+
+/* Keep the full native window until the shrinking panel meets the ball. */
+html.app body.float .drawer.folding {
+  transform-origin: top right;
+  overflow: hidden;
+  pointer-events: none;
+  box-shadow: none !important;
+  animation: desklet-fold var(--t-4) var(--e-drawer-out) both;
+}
+html.app body.float .drawer.folding .panel {
+  box-shadow: none !important;
+}
+html.app body.float .drawer.folding .panel > * {
+  animation: desklet-fold-content var(--t-1) ease-out both;
+}
+html.app body.float .drawer.folding ~ .ball {
+  visibility: visible;
+  animation: desklet-ball-arrive var(--t-1) var(--e-out) .18s both;
+}
+@keyframes desklet-fold {
+  0% { transform: translateX(-50%); border-radius: var(--r-lg); opacity: 1; }
+  72% { opacity: 1; }
+  100% {
+    transform: translate(calc(-50% + 12px), -12px) scale(var(--fold-x), var(--fold-y));
+    border-radius: 50%;
+    opacity: .25;
+  }
+}
+@keyframes desklet-fold-content { to { opacity: 0; } }
+@keyframes desklet-ball-arrive {
+  from { opacity: 0; transform: scale(.82); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 原来球和窗口一样大（46×46），外面一点余地都没有：投影会被窗口边缘
+   裁成一块浅灰方块，hover 放大也会被切掉四条边，只能退化成亮度反馈。
+   现在窗口放大到 54，多了 4px 余量，投影和放大都能真的做出来。 */
+html.app body.float .ball {
+  box-shadow: 0 2px 5px rgba(20, 20, 18, .28) !important;
+}
+html.app body.float .drawer.collapsed ~ .ball:hover {
+  transform: scale(1.08) !important;
+  opacity: 1;
+}
+
+/* 贴上边收起时只留把手那么宽：760px 宽的窄条里只有中间 210px 看得见，
+   但整条都能触发展开，鼠标扫过屏幕顶部就会莫名弹出 */
+html.app body.dock .drawer.collapsed { width: 210px; }
+
+/* 贴边/侧边：窗口就是面板的边界，抽屉顶到窗口内沿 */
+html.app body.dock .drawer { top: 0; }
+body.dock.edge-bottom .drawer {
+  top: auto;
+  bottom: 0;
+  flex-direction: column-reverse;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+body.edge-bottom .panel {
+  border: 1px solid var(--edge);
+  border-bottom: 0;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+body.edge-bottom .handle {
+  border: 1px solid var(--handle-edge);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+}
+html.app body.side .drawer {
+  top: 0;
+  bottom: 0;
+  flex-direction: row-reverse;
+}
+html.app body.side .panel { margin: 10px 0 10px 10px; }
+html.app body.side .handle {
+  height: min(210px, 100%);
+  align-self: flex-start;
+  margin-top: min(var(--side-handle-top, 0px), max(0px, calc(100vh - 210px)));
+}
+body.side.edge-left .drawer { right: auto; left: 0; flex-direction: row; }
+body.side.edge-left .panel { margin: 10px 10px 10px 0; }
+body.side.edge-left .handle {
+  border: 1px solid var(--handle-edge);
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+}
+html.app .handle, html.app .winbar, html.app .ball {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+html.app .handle:active, html.app .winbar:active, html.app .ball:active { cursor: grabbing; }
+
+/* ── 投影口径 ──────────────────────────────────────────────
+   窗口只比面板外扩 12–20px，而原型里挂的是 32/60px 的投影：
+   大半截落在窗口外，被窗口边界一刀切平。在浅色桌面上看，
+   就是「面板周围一圈发黑的方边」，越靠边缘越硬。
+   桌面版统一换成能完整落在留白里的紧凑投影。                        */
+html.app .panel,
+html.app .drawer:not(.collapsed) {
+  box-shadow: var(--app-shadow) !important;
+}
+/* 用主题色描边提示置顶。 */
+html.app body.topmost .panel,
+html.app body.topmost .drawer:not(.collapsed) {
+  box-shadow: var(--app-shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent) !important;
+}
+
+/* 透明窗口里的把手使用实色，避免底色发灰。 */
+html.app .handle {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--card);
+}
+html.app .handle:hover { background: var(--card-hover); }
+
+
+/* Resize from the panel border. Docked windows expose the edges that can move. */
+html.app .panel { position: relative; }
+.panel-resize { display: none; position: absolute; z-index: 10; touch-action: none; }
+html.app body.float .drawer:not(.collapsed) .panel-resize,
+html.app body.dock .drawer:not(.collapsed) :is(.resize-e,.resize-w),
+html.app body.dock:not(.edge-bottom) .drawer:not(.collapsed) :is(.resize-s,.resize-se,.resize-sw),
+html.app body.edge-bottom .drawer:not(.collapsed) :is(.resize-n,.resize-ne,.resize-nw),
+html.app body.edge-left .drawer:not(.collapsed) .resize-e,
+html.app body.side:not(.edge-left) .drawer:not(.collapsed) .resize-w { display: block; }
+.resize-n, .resize-s { height: 7px; left: 9px; right: 9px; cursor: ns-resize; }
+.resize-n { top: 0; }
+.resize-s { bottom: 0; }
+.resize-w, .resize-e { width: 7px; top: 9px; bottom: 9px; cursor: ew-resize; }
+.resize-w { left: 0; }
+.resize-e { right: 0; }
+:is(.resize-nw,.resize-ne,.resize-sw,.resize-se) { width: 10px; height: 10px; }
+.resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+.resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+.resize-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.resize-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.panel-resize:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+body.edge-resizing { user-select: none; }
+body.edge-resizing :is(.drawer,.panel) { transition: none !important; }

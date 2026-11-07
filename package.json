@@ -1,0 +1,17 @@
+{
+  "name": "desklet-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Desklet — 桌面话术抽屉",
+  "scripts": {
+    "dev": "tauri dev --config src-tauri/tauri.dev.json",
+    "dev:plain": "tauri dev",
+    "build": "tauri build",
+    "build:debug-port": "tauri build --config src-tauri/tauri.dev.json",
+    "icon": "tauri icon"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  },
+  "license": "MIT"
+}

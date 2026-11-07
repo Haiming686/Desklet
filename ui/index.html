@@ -1,0 +1,3927 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>桌面挂件原型 · 话术抽屉</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+  :root {
+    --panel: #fbfaf7;
+    --card: #ffffff;
+    --ink: #1b1b19;
+    --ink-2: #6d6b64;
+    --ink-3: #736f65;
+    --grip: #93938b;
+    --mark: #f9e7ac;
+    --on-mark: #463300;
+    --app-shadow: 0 4px 12px rgba(24,24,20,.12), 0 1px 3px rgba(24,24,20,.08);
+    color-scheme: light;
+    --line: #e7e4dc;
+    --line-2: #d8d4ca;
+    --accent: #2f6f5e;
+    --accent-soft: #e6f0ec;
+    --danger: #b8462f;
+    /* ── 语义色板：深色模式只覆盖这一层，样式里不再出现裸色值 ── */
+    --card-2: #f7f5f0;        /* 比卡片深一级：底栏、悬浮窗标题渐变 */
+    --card-hover: #faf9f6;    /* 按钮/分段控件的悬停底 */
+    --sunken: #f2f0ea;        /* 凹陷底：缩略图占位、图标按钮悬停 */
+    --tint: #f4faf7;          /* 主色浅印：复制成功那一下的卡片底 */
+    --on-ink: #ffffff;        /* 铺在 --ink 上的字（深色模式下要反过来） */
+    --on-accent: #ffffff;
+    --on-danger: #ffffff;
+    --edge: rgba(0,0,0,.06);  /* 面板与弹层的外描边 */
+    --handle-bg: rgba(255,255,255,.72);
+    --handle-bg-hover: rgba(255,255,255,.96);
+    --handle-edge: rgba(255,255,255,.92);
+    --danger-soft: #fff3f1;
+    --danger-ink: #8d2f21;
+    --danger-strong: #b03c2b;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --shadow: 0 12px 32px rgba(28, 28, 25, .14), 0 2px 6px rgba(28, 28, 25, .06);
+    /* 动效：统一时长与曲线，别各处随手写。
+       进入用 --e-out（收尾略缓），退出用 --e-drawer-out（起步稳、末尾快，比进入短） */
+    --e-out: cubic-bezier(.22,.68,.28,1);      /* 元素进出，收尾略缓 */
+    --e-spring: cubic-bezier(.34,1.16,.5,1);   /* 冒出来带一点回弹 */
+    /* 拉开：前 1/3 稳着推、中段匀、末尾绵。原来 .24,.86 首帧就窜 56px，像被弹出来 */
+    --e-drawer: cubic-bezier(.36,.6,.3,1);
+    /* 收起：轻起步、匀速收、末尾稍快，别在开头或结尾停一下 */
+    --e-drawer-out: cubic-bezier(.25,.1,.6,.45);
+    /* 四档时长 + 抽屉专用。改手感只改这里，样式里不再出现裸数字 */
+    --t-1: .12s;   /* 微交互：hover、按下、颜色、开关 */
+    --t-2: .2s;    /* 小元素进出：toast、气泡、徽标 */
+    --t-3: .26s;   /* 面板内切换：列表、标签、模式 */
+    --t-4: .3s;    /* 面板伸缩、抽屉收起 */
+    --t-drawer: .38s;   /* 抽屉整体展开 */
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    /* Windows 上没有 PingFang，实际全落到雅黑。先把 Segoe UI Variable 排前面：
+       它随 Win11 装，英文和数字比雅黑精致；没有就依次退回，macOS 落到苹方 */
+    font-family: "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    /* 状态栏的「23 项」会在增删时变数字，等宽数字能避免整行左右抖 */
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    background: #dfe4ea;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .desktop {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(1200px 700px at 18% 8%, #eef1f6 0%, transparent 60%),
+      radial-gradient(900px 600px at 82% 92%, #e4ecf3 0%, transparent 55%),
+      linear-gradient(140deg, #e9edf3 0%, #dde4ea 48%, #e6e9e2 100%);
+  }
+  .desk-icons {
+    position: absolute; top: 46px; left: 40px;
+    display: grid; grid-template-columns: repeat(3, 84px); gap: 26px 20px;
+  }
+  .desk-icon { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .desk-icon .glyph {
+    width: 46px; height: 46px; border-radius: 12px;
+    background: rgba(255,255,255,.72);
+    border: 1px solid rgba(255,255,255,.9);
+    box-shadow: 0 4px 10px rgba(40,50,60,.10);
+    display: grid; place-items: center;
+    font-size: 15px; font-weight: 500; color: #4a5560;
+  }
+  .desk-icon span { font-size: 11px; color: #5b6570; letter-spacing: .2px; }
+
+  .stage-hint {
+    position: absolute; left: 40px; bottom: 34px;
+    font-size: 12px; color: #6b747e; line-height: 1.9;
+    background: rgba(255,255,255,.55);
+    border: 1px solid rgba(255,255,255,.8);
+    padding: 10px 14px; border-radius: 10px;
+    backdrop-filter: blur(6px);
+  }
+  .stage-hint b { font-weight: 500; color: #3f4850; }
+  kbd {
+    font-family: inherit; font-size: 11px;
+    background: var(--card); border: 1px solid var(--line-2);
+    border-bottom-width: 2px; border-radius: 4px;
+    padding: 1px 5px; color: #444;
+  }
+
+  /* 拖高度的时候别让 380ms 过渡拖着，面板追不上手 */
+  body.resizing-h .drawer,
+  body.resizing-h .panel { transition: none !important; }
+
+  /* ── 抽屉（贴上边） ───────────────────── */
+  .drawer {
+    position: absolute; top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: var(--pw, 392px);
+    max-width: calc(100vw - 24px);
+    height: 15px; overflow: hidden;
+    display: flex; flex-direction: column;
+    z-index: 20;
+    --ph: min(620px, 72vh);
+    transition: height var(--t-drawer) var(--e-drawer),
+                box-shadow var(--t-drawer) var(--e-drawer);
+  }
+  /* 收起时换成"先蓄力后加速"的曲线：离开要有质量感，不能跟展开同一条 */
+  .drawer.collapsed {
+    transition: height var(--t-4) var(--e-drawer-out),
+                box-shadow var(--t-4) var(--e-drawer-out);
+  }
+  .drawer:not(.collapsed) {
+    height: calc(15px + var(--ph));
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    box-shadow: 0 14px 40px rgba(28,28,25,.16);
+  }
+  .handle {
+    flex: 0 0 15px; width: 210px; margin: 0 auto; height: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    background: var(--handle-bg);
+    border: 1px solid var(--handle-edge); border-top: 0;
+    border-radius: 0 0 10px 10px;
+    backdrop-filter: blur(8px);
+    transition: background var(--t-1) var(--e-out);
+  }
+  .handle:hover { background: var(--handle-bg-hover); }
+  .handle .grip { width: 26px; height: 3px; border-radius: 2px; background: var(--grip); }
+  .handle .vtext {
+    font-size: 10.5px; letter-spacing: 2px;
+    color: var(--ink-3); user-select: none;
+  }
+  .handle .pin {
+    width: 8px; height: 8px; border-radius: 50%;
+    border: 1px solid var(--grip); background: transparent;
+  }
+  .drawer.pinned .handle .pin { background: var(--accent); border-color: var(--accent); }
+  /* 收起时别硬切：内容上移淡出，配合外层高度收缩；用 visibility 延迟隐藏，省得 1px 边角先露出来 */
+  /* 关键：panel 高度固定成 --ph，外层只负责裁切。
+     否则收起时 panel 从 358px 被压到 0，里面的卡片一路重排、文字被挤扁，那才是"顿"的来源 */
+  body.dock .panel {
+    height: var(--ph);
+    flex: 0 0 var(--ph);
+  }
+  /* 收起时内容不淡出、不位移：只让外层裁切窗口变小（真抽屉）。
+     之前是内容先 0.16s 淡没、盒子再 0.14s 缩完，两段脱节，看着就是"顿" */
+  body.dock .drawer.collapsed .panel {
+    visibility: hidden;
+    transition: opacity var(--t-1) var(--e-out), visibility 0s var(--t-4);
+  }
+
+  .panel {
+    width: 100%; flex: 1 1 auto; min-height: 0;
+    background: var(--panel);
+    border: 1px solid var(--edge); border-top: 0;
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    opacity: var(--op, 1);
+    /* height 也要过渡：改面板宽度时内容重排、--ph 会变，高度瞬跳会跟外层错拍 */
+    transition: opacity var(--t-1) var(--e-out), height var(--t-drawer) var(--e-drawer);
+  }
+
+  /* header */
+  .p-head { padding: 12px 12px 0; }
+  .head-bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .head-acts { display: flex; gap: 2px; flex: 0 0 auto; }
+  .winbar { display: none; }
+
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    height: 34px; padding: 0 10px;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    transition: border-color var(--t-1) var(--e-out), box-shadow var(--t-1) var(--e-out);
+  }
+  .search:focus-within { border-color: var(--line-2); box-shadow: 0 0 0 3px rgba(47,111,94,.07); }
+  .search svg { flex: 0 0 14px; opacity: .45; }
+  .search input {
+    flex: 1; border: 0; outline: 0; background: transparent;
+    font: inherit; font-size: 12.5px; color: var(--ink);
+  }
+  .search input::placeholder { color: var(--ink-3); }
+
+  .tab-strip { display: flex; flex: 1 1 auto; align-items: center; gap: 2px; min-width: 0; }
+  .tab-scroll { flex: 0 0 22px; width: 22px; }
+  .tab-scroll[hidden] { display: none; }
+  .tab-scroll:disabled { opacity: .35; cursor: default; }
+  .tabs {
+    display: flex; gap: 4px; flex: 1 1 auto; min-width: 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto;
+    height: 27px; padding: 0 11px; border-radius: 999px;
+    border: 1px solid transparent; background: transparent;
+    font: inherit; font-size: 12px; color: var(--ink-2); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: background var(--t-1) var(--e-out), color var(--t-1) var(--e-out), border-color var(--t-1) var(--e-out);
+  }
+  .tab:hover { background: var(--sunken); }
+  .tab.on { background: var(--accent); color: var(--on-accent); }
+  .tab-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab .n { font-size: 10.5px; opacity: .6; }
+
+  .divider { height: 1px; background: var(--line); margin: 10px 12px 0; }
+
+  /* body */
+  .p-body {
+    flex: 1; overflow-y: auto; padding: 12px 14px 6px;
+    scrollbar-width: thin;
+  }
+  .p-body::-webkit-scrollbar { width: 8px; }
+  .p-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; border: 2px solid var(--panel); }
+
+  .group-label {
+    font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase;
+    color: var(--ink-3); margin: 12px 2px 7px;
+  }
+  .group-label:first-child { margin-top: 0; }
+
+  /* text card */
+  .card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 10px 11px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color var(--t-1) var(--e-out), background-color var(--t-2) var(--e-out),
+                transform var(--t-1) var(--e-out), box-shadow var(--t-1) var(--e-out);
+  }
+  .card:hover { border-color: var(--line-2); box-shadow: 0 4px 12px rgba(30,30,25,.07); transform: translateY(-1px); }
+  .card:active { transform: translateY(0) scale(.988); transition-duration: .08s; }
+  .card .c-top { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+  .card .c-title {
+    font-size: 12.5px; font-weight: 600; letter-spacing: .1px; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 正文是要读、要复制的主角，给最深的墨色；标题只做索引 */
+  .card .c-body {
+    font-size: 12.5px; line-height: 1.6; color: var(--ink);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; word-break: break-word;
+  }
+  .card.mono .c-body { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 11.8px; }
+  .card .c-note {
+    font-size: 10.5px; color: var(--ink-3); margin-top: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .g-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 2px; border-bottom: 1px solid var(--line);
+  }
+  .g-row:last-child { border-bottom: 0; }
+  .g-row .g-name { flex: 1; font-size: 12.5px; }
+  .g-row .g-cnt { font-size: 10.5px; color: var(--ink-3); }
+
+
+  .vars { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 7px; }
+  .chip {
+    font-size: 10.5px; padding: 1px 6px; border-radius: 4px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .chip.app { background: var(--accent-soft); color: var(--accent); }
+
+  .c-acts {
+    position: absolute; top: 8px; right: 8px;
+    display: flex; gap: 2px; opacity: 0; transition: opacity var(--t-1) var(--e-out);
+    background: linear-gradient(90deg, transparent, var(--card) 32%);
+    padding-left: 14px; border-radius: 6px;
+  }
+  .card:hover .c-acts,
+  .card:focus-within .c-acts,
+  .tile:hover .c-acts, .tile:focus-within .c-acts,
+  .thumb:hover .c-acts, .thumb:focus-within .c-acts { opacity: 1; }
+
+  /* 复制成功：卡片自己亮一下，视线不用跑去底部看提示 */
+  .card.copied, .srow.copied { border-color: rgba(47,111,94,.5); background: var(--tint); }
+  /* 复制瞬间按一下再回弹，比只换个底色更像"收到了" */
+  .card.copied { animation: cardPop var(--t-4) var(--e-out); }
+  @keyframes cardPop {
+    0% { transform: translateY(-1px) scale(1); }
+    38% { transform: translateY(-1px) scale(.986); }
+    100% { transform: translateY(-1px) scale(1); }
+  }
+  .card.copied::after, .srow.copied::after {
+    content: '✓ 已复制'; position: absolute; z-index: 3;
+    font-size: 10px; line-height: 1; color: var(--on-accent); background: var(--accent);
+    padding: 3px 6px; border-radius: 999px; letter-spacing: .2px;
+    animation: popIn var(--t-2) var(--e-spring);
+  }
+  .card.copied::after { top: 6px; right: 7px; box-shadow: -12px 0 10px 3px var(--tint); }
+  .srow.copied::after { top: 8px; right: 8px; }
+  .card.copied .c-acts, .srow.copied .c-acts { opacity: 0 !important; }
+  .srow.copied .s-g { opacity: 0; }
+  @keyframes popIn { from { opacity: 0; transform: scale(.88); } to { opacity: 1; transform: scale(1); } }
+  .icon-btn {
+    width: 22px; height: 22px; border: 0; border-radius: 5px;
+    background: transparent; color: var(--ink-3); cursor: pointer;
+    display: grid; place-items: center; font-size: 12px; line-height: 1;
+    transition: background var(--t-1) var(--e-out), color var(--t-1) var(--e-out);
+  }
+  .icon-btn:active { transform: scale(.9); }
+  .icon-btn:hover { background: var(--sunken); color: var(--ink); }
+  .icon-btn.del:hover { background: var(--danger-soft); color: var(--danger); }
+  .card:focus-visible, .tile:focus-visible, .thumb:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+
+  /* app tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+  .tile {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    padding: 12px 6px 10px;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r-md); cursor: pointer;
+    transition: border-color var(--t-1) var(--e-out), box-shadow var(--t-1) var(--e-out), transform var(--t-1) var(--e-out);
+  }
+  .tile:hover { border-color: var(--line-2); box-shadow: 0 4px 12px rgba(30,30,25,.07); transform: translateY(-1px); }
+  .tile:active { transform: translateY(0) scale(.98); }
+  .tile .sq {
+    width: 38px; height: 38px; border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 15px; font-weight: 500; color: #fff;
+  }
+  /* 拿到真实图标就把底色撤掉，让图标自己带着形状和投影 */
+  .tile .sq.has-icon { background: transparent !important; }
+  .tile .sq.has-icon img {
+    width: 88%; height: 88%; object-fit: contain; display: block;
+    filter: drop-shadow(0 1px 1px rgba(30,30,25,.18));
+  }
+  .tile .nm {
+    font-size: 11.5px; color: var(--ink-2); max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tile .c-acts { top: 2px; right: 2px; padding-left: 8px; background: var(--card); }
+  @media (hover: none) { .c-acts { opacity: 1; } }
+
+  /* image thumbs */
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+  .thumb {
+    position: relative; border-radius: var(--r-md); overflow: hidden;
+    border: 1px solid var(--line); background: var(--sunken); cursor: zoom-in;
+    aspect-ratio: 16 / 10;
+  }
+  .thumb img {
+    width: 100%; height: 100%; object-fit: contain; display: block;
+    transition: transform var(--t-3) var(--e-out);
+  }
+  .thumb:hover img { transform: scale(1.025); }
+  .thumb .cap {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 14px 8px 6px; font-size: 10.5px; color: #fff;
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,.55));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .thumb .c-acts { top: 4px; right: 4px; background: var(--handle-edge); padding-left: 8px; }
+
+  .empty {
+    padding: 34px 16px; text-align: center; color: var(--ink-3); font-size: 12px; line-height: 1.8;
+  }
+  .empty .e-ic { font-size: 19px; opacity: .45; margin-bottom: 7px; letter-spacing: 2px; }
+  .empty .e-t { font-size: 12.5px; color: var(--ink-2); }
+  .empty .e-s { font-size: 11.5px; margin-top: 3px; }
+  .empty .e-btn { margin-top: 13px; }
+
+  /* 搜索结果：紧凑列表 */
+  body.searching .p-body,
+  body.horizontal.searching .p-body {
+    display: block; overflow-y: auto; overflow-x: hidden; padding: 10px 14px 6px;
+  }
+  .s-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: var(--ink-3); margin: 0 2px 8px;
+  }
+  .s-head b { color: var(--ink-2); font-weight: 500; }
+  .s-clear {
+    margin-left: auto; border: 0; background: none; padding: 0;
+    font: inherit; font-size: 11px; color: var(--accent); cursor: pointer;
+  }
+  .s-clear:hover { text-decoration: underline; }
+  .srow {
+    position: relative; display: flex; align-items: flex-start; gap: 10px;
+    padding: 9px 34px 9px 11px; margin-bottom: 6px;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+    cursor: pointer;
+    transition: border-color var(--t-1) var(--e-out), box-shadow var(--t-1) var(--e-out), background-color var(--t-2) var(--e-out);
+  }
+  .srow:hover { border-color: var(--line-2); box-shadow: 0 3px 10px rgba(30,30,25,.06); }
+  .srow:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .srow .s-main { flex: 1; min-width: 0; }
+  .srow .s-t {
+    font-size: 12.5px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .srow .s-d {
+    font-size: 11.5px; color: var(--ink-2); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .srow mark { background: var(--mark); color: var(--on-mark); border-radius: 2px; padding: 0 1px; }
+  .srow .s-g {
+    flex: 0 0 auto; font-size: 10px; color: var(--ink-3);
+    border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px;
+    margin-top: 1px; max-width: 84px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .srow .c-acts { top: 50%; transform: translateY(-50%); right: 4px; }
+  .srow:hover .c-acts, .srow:focus-within .c-acts { opacity: 1; }
+
+  /* 拖拽落点提示 */
+  body.dropping .panel { box-shadow: inset 0 0 0 2px rgba(47,111,94,.5), var(--shadow); }
+  body.dropping .p-body { position: relative; }
+  body.dropping .p-body::after {
+    content: '松手，存为一项';
+    position: absolute; inset: 6px 8px;
+    display: grid; place-items: center;
+    background: rgba(248,251,249,.97);
+    border: 1.5px dashed var(--accent);
+    border-radius: 10px; color: var(--accent);
+    font-size: 12.5px; letter-spacing: .5px; pointer-events: none;
+  }
+
+  /* footer */
+  .p-dock {
+    flex: 0 0 auto;
+    background: var(--card-2);
+    border-top: 1px solid var(--line);
+    padding: 10px 0 0;
+  }
+  .p-dock .search { margin: 0 14px; }
+  .p-foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px 11px; border-top: 0;
+    background: transparent;
+  }
+  .btn {
+    height: 30px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--line-2); background: var(--card);
+    font: inherit; font-size: 12px; color: var(--ink); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: background var(--t-1) var(--e-out), border-color var(--t-1) var(--e-out),
+                color var(--t-1) var(--e-out), transform .1s var(--e-out);
+  }
+  .btn:active { transform: scale(.97); }
+  .btn:hover { background: var(--card-hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.primary:hover { background: color-mix(in srgb, var(--accent), var(--ink) 16%); }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
+  .btn.ghost:hover { background: var(--sunken); }
+  .btn.danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+  .btn.danger:hover { background: var(--danger-strong); }
+  .foot-note { margin-left: auto; min-width: 0; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-foot .btn { flex: none; }
+  .backup-status { display: block; margin-top: 8px; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; user-select: text; }
+  .foot-note.bad { color: var(--danger); }
+  .ask-text { margin: 0 0 2px; font-size: 12.5px; line-height: 1.75; color: var(--ink-2); }
+  .mini {
+    display: block; width: 100%; height: 104px; object-fit: cover;
+    border-radius: 8px; border: 1px solid var(--line);
+    background: var(--sunken); margin-bottom: 8px;
+  }
+  .link-btn {
+    border: 0; background: none; padding: 0; margin-top: 9px;
+    font: inherit; font-size: 11.5px; color: var(--ink-2); cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .link-btn:hover { color: var(--danger); }
+  /* 复位高度不是危险操作，别跟着变红；单独一行更好点 */
+  #hAuto { display: block; margin-top: 3px; }
+  #hAuto[hidden] { display: none; }
+  #hAuto:hover { color: var(--accent); }
+
+  /* 变量填充：贴在卡片旁的小表单，替代 window.prompt 的连环弹窗 */
+  .varpop {
+    position: fixed; z-index: 95; width: 266px;
+    background: var(--panel);
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 12px;
+    box-shadow: 0 18px 44px rgba(24,24,20,.2), 0 2px 8px rgba(24,24,20,.06);
+    padding: 11px 12px 10px;
+  }
+  .varpop[hidden] { display: none; }
+  .vp-head { display: flex; align-items: center; gap: 4px; margin-bottom: 9px; }
+  .vp-title {
+    flex: 1; min-width: 0; font-size: 12px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .vp-title span { font-weight: 400; color: var(--ink-3); }
+  .vp-field { margin-bottom: 7px; }
+  .vp-field label { display: block; font-size: 10.5px; color: var(--ink-3); margin-bottom: 3px; }
+  .vp-field input {
+    width: 100%; height: 29px; font: inherit; font-size: 12.5px; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 7px;
+    padding: 0 8px; outline: 0;
+    transition: border-color var(--t-1) var(--e-out), box-shadow var(--t-1) var(--e-out);
+  }
+  .vp-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47,111,94,.13); }
+  .vp-foot { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+  .vp-tip { flex: 1; min-width: 0; font-size: 10px; color: var(--ink-3); }
+  .vp-foot .btn { height: 26px; padding: 0 10px; font-size: 11.5px; }
+
+  /* 横向排布（面板够宽时自动切换） */
+  body.horizontal .drawer, body.dock .drawer { --ph: 384px; }
+  body.horizontal .p-body {
+    display: flex; flex-direction: row; align-items: flex-start;
+    gap: 8px;
+    overflow-x: auto; overflow-y: hidden;
+    padding: 10px 14px 12px;
+  }
+  body.horizontal .p-body > .card {
+    flex: 0 0 236px; margin-bottom: 0;
+    min-height: 104px; max-height: 196px; overflow: hidden;
+  }
+  body.horizontal .p-body > .card .c-body { -webkit-line-clamp: 4; }
+  /* 应用 / 图片：拆掉内部网格容器，让每个方块直接成为横排里的一项（否则仍会按列换行） */
+  body.horizontal .p-body > .tiles,
+  body.horizontal .p-body > .thumbs { display: contents; }
+  body.horizontal .p-body > .tiles > .tile {
+    flex: 0 0 96px; margin-bottom: 0;
+    padding: 14px 6px 12px;
+  }
+  body.horizontal .p-body > .tiles > .tile .sq { width: 42px; height: 42px; font-size: 16px; }
+  body.horizontal .p-body > .thumbs > .thumb { flex: 0 0 196px; }
+  body.horizontal .p-body > .group-label { display: none; }
+  body.horizontal .p-body > .empty { flex: 1 1 auto; padding: 28px 16px; }
+  body.horizontal .p-body::-webkit-scrollbar { height: 8px; }
+  body.float.horizontal .panel { height: var(--fh, 400px); }
+
+  /* 贴上边：宽面板按多列铺排，纵向滚动（横着一条越用越长，找东西要左右拉） */
+  body.dock.horizontal:not(.searching) .p-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+    align-content: start;
+    /* 行高按内容，别让容器变高时把行拉开：
+       否则量出来的"内容高度"会跟着面板高度一起涨，自动高度越算越高 */
+    grid-auto-rows: max-content;
+    overflow-x: hidden; overflow-y: auto;
+    padding: 10px 14px 12px;
+  }
+  body.dock.horizontal .p-body > .card { flex: none; margin-bottom: 0; }
+  /* 应用 / 图片交回自身网格，保住原来的密度（应用一行 5~6 个、图片 3~4 张） */
+  body.dock.horizontal .p-body > .tiles,
+  body.dock.horizontal .p-body > .thumbs {
+    display: grid; grid-column: 1 / -1; gap: 8px;
+  }
+  body.dock.horizontal .p-body > .tiles { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+  body.dock.horizontal .p-body > .thumbs { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  body.dock.horizontal .p-body > .tiles > .tile { flex: none; padding: 12px 6px 10px; }
+  body.dock.horizontal .p-body > .tiles > .tile .sq { width: 38px; height: 38px; font-size: 15px; }
+  body.dock.horizontal .p-body > .thumbs > .thumb { flex: none; }
+  body.dock.horizontal .p-body > .empty { grid-column: 1 / -1; padding: 30px 16px; }
+  /* 内容没滚到底时，底栏上方压一层淡出，提示下面还有东西 */
+  body.dock .p-dock { position: relative; }
+  body.dock .p-dock::before {
+    content: ''; position: absolute; left: 1px; right: 1px; bottom: 100%;
+    height: 22px; pointer-events: none;
+    background: linear-gradient(transparent, var(--panel));
+    opacity: 0; transition: opacity var(--t-2) var(--e-out);
+  }
+  body.dock.scroll-more .p-dock::before { opacity: 1; }
+  /* 开合过程中面板是"被裁"的，底边会把卡片一刀切断。这一层贴在抽屉当前可见底边，
+     跟着高度一起走，动画结束就撤掉，不影响底栏 */
+  body.dock .drawer::after {
+    content: ''; position: absolute; left: 1px; right: 1px; bottom: 1px;
+    height: 30px; pointer-events: none; z-index: 4;
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    background: linear-gradient(transparent, var(--panel));
+    opacity: 0; transition: opacity var(--t-1) var(--e-out);
+  }
+  /* 展开、收起都要盖（收起时 drawer 带着 collapsed，别用 :not(.collapsed) 排除掉） */
+  body.dock.drawer-busy .drawer::after { opacity: 1; }
+  /* 往上滚过之后，同样在分割线下面压一层，别让半张卡贴着标签栏 */
+  body.dock .divider { position: relative; }
+  body.dock .divider::after {
+    content: ''; position: absolute; left: 0; right: 0; top: 1px;
+    height: 18px; pointer-events: none; z-index: 3;
+    background: linear-gradient(var(--panel), transparent);
+    opacity: 0; transition: opacity var(--t-2) var(--e-out);
+  }
+  body.dock.scroll-prev .divider::after { opacity: 1; }
+
+  /* 悬浮球 */
+  .ball {
+    position: absolute; width: 46px; height: 46px; border-radius: 50%;
+    background: var(--ink); color: var(--on-ink); display: none;
+    align-items: center; justify-content: center;
+    font-size: 12px; letter-spacing: 1px; cursor: pointer;
+    box-shadow: 0 8px 22px rgba(20,20,18,.26); z-index: 40; user-select: none;
+    transition: transform var(--t-1) var(--e-out), box-shadow var(--t-1) var(--e-out);
+    border: 1px solid rgba(255,255,255,.18);
+  }
+  .ball:hover { transform: scale(1.04); }
+  /* 悬浮球原来跟抽屉一样是 display 硬切；改成常驻、只在收起时浮出来 */
+  body.float .ball {
+    display: flex;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transform: scale(.86);
+    transition: opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-out), visibility 0s var(--t-2);
+  }
+  body.float .drawer.collapsed ~ .ball {
+    opacity: 1; visibility: visible; pointer-events: auto; transform: none;
+    transition: opacity var(--t-3) var(--e-out), transform var(--t-3) var(--e-spring), visibility 0s 0s;
+  }
+  body.float .drawer.collapsed ~ .ball:hover { transform: scale(1.06); }
+
+  /* 悬浮窗模式 */
+  body.float .drawer {
+    left: 0; top: 0; right: auto;
+    transform: none;
+    width: auto; height: auto; overflow: visible;
+    box-shadow: none;
+  }
+  body.float .drawer .handle { display: none; }
+  body.float .drawer {
+    transition: opacity var(--t-2) var(--e-out), transform var(--t-drawer) var(--e-drawer), visibility 0s 0s;
+  }
+  body.float .drawer.collapsed {
+    visibility: hidden; opacity: 0; pointer-events: none;
+    transform: translateY(-8px) scale(.982);
+    transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-drawer-out), visibility 0s var(--t-2);
+  }
+  body.float .panel {
+    width: var(--pw, 392px);
+    height: var(--fh, min(640px, calc(100vh - 60px)));
+    margin: 0;
+    opacity: var(--op, 1);
+    border: 1px solid var(--edge);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+  }
+  body.float .winbar {
+    display: block; flex: 0 0 14px; height: 14px;
+    cursor: grab; border-radius: var(--r-lg) var(--r-lg) 0 0;
+    background: linear-gradient(var(--card-2), transparent);
+  }
+  body.float .winbar:active { cursor: grabbing; }
+  body.float .p-head { padding-top: 0; }
+  body.topmost .panel { box-shadow: 0 22px 60px rgba(20,20,18,.24), 0 0 0 1px rgba(47,111,94,.18); }
+  body.topmost .drawer:not(.collapsed) { box-shadow: 0 22px 56px rgba(20,20,18,.22), 0 0 0 1px rgba(47,111,94,.16); }
+  .fold-btn { display: none; }
+  body.float .fold-btn { display: grid; }
+
+  /* 侧边抽屉（贴右缘） */
+  body.side .drawer {
+    left: auto; right: 0; top: 0; bottom: 0;
+    transform: none;
+    width: calc(15px + var(--pw, 392px) + 10px);
+    max-width: none;
+    height: 100%;
+    flex-direction: row; align-items: stretch;
+    transition: width var(--t-drawer) var(--e-drawer);
+  }
+  body.side .drawer.collapsed { transition: width var(--t-4) var(--e-drawer-out); }
+  body.side .drawer.collapsed { width: 15px; height: 100%; box-shadow: none; }
+  body.side .drawer:not(.collapsed) { height: 100%; border-radius: 0; box-shadow: none; }
+  body.side .handle {
+    flex: 0 0 15px; width: 15px; height: 100%; margin: 0;
+    flex-direction: column; justify-content: center; gap: 10px; padding: 16px 0;
+    border-radius: 10px 0 0 10px;
+    border: 1px solid var(--handle-edge); border-right: 0;
+  }
+  body.side .handle .grip { width: 3px; height: 26px; }
+  body.side .handle .vtext { writing-mode: vertical-rl; letter-spacing: 3px; }
+  body.side .panel {
+    width: var(--pw, 392px); flex: 0 0 var(--pw, 392px);
+    height: calc(100% - 20px);
+    margin: 10px 10px 10px 0;
+    border: 1px solid var(--edge); border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+  }
+  body.side .divider { margin: 10px 12px 0; }
+
+  /* 设置面板 */
+  .seg { display: flex; gap: 6px; }
+  .seg-btn {
+    flex: 1; height: 34px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--card);
+    font: inherit; font-size: 12px; color: var(--ink-2); cursor: pointer;
+    transition: background var(--t-1) var(--e-out), color var(--t-1) var(--e-out), border-color var(--t-1) var(--e-out);
+  }
+  .seg-btn:hover { background: var(--card-hover); }
+  .seg-btn.on { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .row label { margin: 0; font-size: 12px; color: var(--ink); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+
+  /* toast */
+  .toast {
+    position: absolute; left: 50%; bottom: 74px; transform: translate(-50%, 10px) scale(.97);
+    background: var(--ink); color: var(--on-ink);
+    font-size: 12px; padding: 8px 14px; border-radius: 8px;
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-spring);
+    z-index: 60; white-space: nowrap;
+    display: flex; align-items: center; gap: 10px;
+    max-width: calc(100vw - 80px);
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  .toast.on.has-act { pointer-events: auto; }
+  /* 出错时别只是默默空白：顶上给一条能看见的提示 */
+  .errbar {
+    position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 10px);
+    z-index: 200; display: flex; align-items: center; gap: 8px;
+    max-width: min(560px, calc(100vw - 28px));
+    background: var(--danger-soft); color: var(--danger-ink);
+    border: 1px solid rgba(173,63,44,.26); border-radius: 10px;
+    padding: 8px 10px 8px 12px; font-size: 11.5px; line-height: 1.55;
+    box-shadow: 0 10px 26px rgba(40,22,18,.16);
+    opacity: 0; transition: opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-out);
+  }
+  .errbar[hidden] { display: none; }
+  #errText { flex: 1 1 auto; min-width: 0; }
+  .errbar.on { opacity: 1; transform: translate(-50%, 0); }
+  .errbar .eb-ic {
+    width: 15px; height: 15px; flex: 0 0 15px; margin-top: 1px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: var(--danger-strong); color: #fff; font-size: 10px; font-weight: 700;
+  }
+  .errbar .eb-act {
+    flex: 0 0 auto; border: 1px solid rgba(173,63,44,.35); background: var(--card);
+    color: var(--danger-ink); border-radius: 6px; font: inherit; font-size: 11px;
+    padding: 2px 8px; cursor: pointer; white-space: nowrap;
+    transition: background var(--t-1) var(--e-out);
+  }
+  .errbar .eb-act:hover { background: #fdeae6; }
+  .errbar .eb-act[hidden] { display: none; }
+  .errbar .eb-x {
+    border: 0; background: transparent; color: #b07168; cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px; flex: 0 0 auto;
+  }
+  .errbar .eb-x:hover { color: var(--danger-ink); }
+  .empty.err .e-ic { color: var(--danger-strong); opacity: .8; }
+  .empty.err .e-s { color: #8d6046; word-break: break-word; }
+  .empty.err .e-btn + .e-btn { margin-left: 8px; }
+  .toast .t-act {
+    flex: 0 0 auto; border: 0; background: transparent; padding: 0;
+    font: inherit; font-size: 12px; cursor: pointer;
+    color: inherit; text-decoration: underline; text-underline-offset: 2px;
+  }
+  .toast .t-act { transition: color var(--t-1) var(--e-out); }
+  .toast .t-act:hover { opacity: .8; }
+
+  /* lightbox */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 80;
+    background: rgba(22,24,26,.72); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center; padding: 40px;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity var(--t-2) var(--e-out), visibility 0s var(--t-2);
+  }
+  .lightbox.on {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transition: opacity var(--t-2) var(--e-out), visibility 0s 0s;
+  }
+  .lightbox img {
+    max-width: 100%; max-height: 100%;
+    border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,.4);
+    background: var(--card);
+    opacity: 0; transform: scale(.985);
+    transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-out);
+  }
+  .lightbox.on img { opacity: 1; transform: none; }
+  .lb-cap { position: absolute; bottom: 26px; left: 0; right: 0; text-align: center;
+    color: #fff; font-size: 12.5px; opacity: .92; }
+  .lb-cap .cnt { opacity: .5; margin-left: 8px; font-size: 11.5px; }
+  .lb-btn {
+    position: absolute; width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.22); background: rgba(28,30,32,.5);
+    color: #fff; font-size: 17px; line-height: 1; cursor: pointer;
+    display: grid; place-items: center;
+    backdrop-filter: blur(6px); transition: background var(--t-1) var(--e-out), transform var(--t-1) var(--e-out);
+  }
+  .lb-btn:hover { background: rgba(20,22,24,.82); }
+  .lb-btn:active { transform: translateY(var(--lb-ty, 0)) scale(.94); }
+  .lb-prev, .lb-next { --lb-ty: -50%; }
+  .lb-close { top: 16px; right: 16px; font-size: 19px; }
+  .lb-prev { left: 16px; top: 50%; transform: translateY(-50%); }
+  .lb-next { right: 16px; top: 50%; transform: translateY(-50%); }
+  .lb-btn[hidden] { display: none; }
+
+  /* modal */
+  .modal {
+    position: fixed; inset: 0; z-index: 90;
+    background: rgba(30,32,34,.34); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity var(--t-2) var(--e-out), visibility 0s var(--t-2);
+  }
+  .modal.on {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transition: opacity var(--t-2) var(--e-out), visibility 0s 0s;
+  }
+  .sheet {
+    width: 420px; background: var(--panel);
+    border-radius: var(--r-lg); box-shadow: var(--shadow);
+    border: 1px solid var(--edge);
+    padding: 18px;
+    max-height: calc(100vh - 48px); overflow-y: auto;
+    transform: translateY(10px) scale(.985);
+    transition: transform var(--t-3) var(--e-out);
+  }
+  .modal.on .sheet { transform: none; }
+  .sheet h3 { margin: 0 0 14px; font-size: 13.5px; font-weight: 500; }
+  .field { margin-bottom: 11px; }
+  .field label { display: block; font-size: 11px; color: var(--ink-3); margin-bottom: 5px; }
+  .field input, .field select, .field textarea {
+    width: 100%; font: inherit; font-size: 12.5px; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; outline: 0; resize: vertical;
+    transition: border-color var(--t-1) var(--e-out), box-shadow var(--t-1) var(--e-out);
+  }
+  .field textarea { min-height: 92px; line-height: 1.6; }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--line-2); box-shadow: 0 0 0 3px rgba(47,111,94,.07);
+  }
+  .field.row label { flex: 1 1 auto; margin: 0; }
+  .field input[type=checkbox] {
+    flex: 0 0 auto; width: 16px; height: 16px;
+    padding: 0; border: 0; background: none;
+  }
+  .field .tip { font-size: 10.5px; color: var(--ink-3); margin-top: 4px; line-height: 1.5; }
+  .sheet-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+  .settings-sheet {
+    width: min(440px, calc(100% - 24px)); padding: 0; overflow: hidden;
+    max-height: calc(100vh - 24px); display: flex; flex-direction: column;
+  }
+  .settings-head { flex: none; padding: 14px 16px 0; border-bottom: 1px solid var(--line); }
+  .settings-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .settings-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .settings-nav { display: flex; gap: 4px; margin-bottom: 10px; }
+  .settings-nav button { flex: 1; justify-content: center; padding-inline: 6px; }
+  .settings-nav button[aria-pressed=true] { color: var(--accent); background: var(--tint); }
+  .settings-content { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px 16px; }
+  .settings-section h4 { margin: 0 0 8px; font-size: 12px; color: var(--ink-2); }
+  .settings-card { margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+  .settings-card .field:last-child { margin-bottom: 0; }
+  .settings-card .field > label { color: var(--ink-2); font-size: 12px; }
+  .settings-mode { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .settings-mode .seg-btn { min-width: 0; padding-inline: 4px; }
+  .settings-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .settings-key { flex: 1; justify-content: center; text-align: center; min-width: 116px; }
+  .settings-key[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+  .settings-danger { margin-top: 8px; color: var(--danger); }
+  .settings-sheet [hidden] { display: none !important; }
+
+  .wall-note {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    font-size: 11.5px; color: #6b747e; background: rgba(255,255,255,.6);
+    border: 1px solid rgba(255,255,255,.9); padding: 6px 12px; border-radius: 999px;
+    backdrop-filter: blur(6px);
+  }
+
+  /* 系统开了「减少动态效果」就全部收敛成瞬切 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+      transition-delay: 0s !important;
+    }
+  }
+
+  /* 主题只替换语义色，控件在各配色中共享结构与状态。 */
+  :root[data-theme=pine] {
+    --panel: #eef5f0;
+    --card: #fbfdfa;
+    --card-2: #e3eee7;
+    --card-hover: #f0f7f2;
+    --sunken: #deebe2;
+    --tint: #e6f4eb;
+    --ink: #19362b;
+    --ink-2: #36594a;
+    --ink-3: #4d6659;
+    --line: #d4e2d9;
+    --line-2: #adccba;
+    --accent: #25654e;
+    --accent-soft: #dbefe3;
+    --grip: #718e7e;
+  }
+  :root[data-theme=ocean] {
+    --panel: #eff5fc;
+    --card: #fbfdff;
+    --card-2: #e8f0fa;
+    --card-hover: #eff6ff;
+    --sunken: #e0ebfa;
+    --tint: #e5f0fe;
+    --ink: #183049;
+    --ink-2: #38536c;
+    --ink-3: #4e667f;
+    --line: #d3e0f1;
+    --line-2: #b4c8e2;
+    --accent: #275e9b;
+    --accent-soft: #dceafd;
+    --grip: #6e88a6;
+  }
+  :root[data-theme=iris] {
+    --panel: #f5f0fa;
+    --card: #fefcff;
+    --card-2: #efe7f7;
+    --card-hover: #f6eefc;
+    --sunken: #ebe0f5;
+    --tint: #f1e7fa;
+    --ink: #362647;
+    --ink-2: #554463;
+    --ink-3: #665574;
+    --line: #e3d7ee;
+    --line-2: #cbb9db;
+    --accent: #704b94;
+    --accent-soft: #ecddf7;
+    --grip: #9280a5;
+  }
+  :root[data-theme=night] {
+    --panel: #1a202c;
+    --card: #242c3a;
+    --card-2: #1d2533;
+    --card-hover: #303b4d;
+    --sunken: #151c28;
+    --tint: #263650;
+    --ink: #eff4ff;
+    --ink-2: #c2cfe1;
+    --ink-3: #a4b4cc;
+    --line: #354156;
+    --line-2: #53627a;
+    --accent: #a1c7ff;
+    --accent-soft: #2d4160;
+    --grip: #788ba9;
+    --on-ink: #1a202c;
+    --on-accent: #18263a;
+    --edge: rgba(170,195,230,.16);
+    --danger: #f09484;
+    --danger-soft: #402a30;
+    --danger-ink: #ffc1b6;
+    --danger-strong: #e48576;
+    --on-danger: #291713;
+    --mark: #5a4929;
+    --on-mark: #fff3d3;
+    --shadow: 0 12px 32px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
+    --app-shadow: 0 4px 12px rgba(0,0,0,.44), 0 1px 3px rgba(0,0,0,.30);
+    color-scheme: dark;
+  }
+  .theme-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .theme-option {
+    position: relative; display: grid; gap: 5px; min-width: 0; padding: 6px;
+    border: 1px solid var(--line); border-radius: var(--r-md);
+    background: var(--card); color: var(--ink-2); font: inherit; font-size: 11px;
+    text-align: left; cursor: pointer; transition: background var(--t-1), border-color var(--t-1);
+  }
+  .theme-option:hover { background: var(--card-hover); border-color: var(--line-2); }
+  .theme-option[aria-pressed=true] { color: var(--accent); border-color: var(--accent); background: var(--tint); }
+  .theme-option[aria-pressed=true]::after { content: "✓"; position: absolute; bottom: 6px; right: 7px; }
+  .theme-swatch {
+    position: relative; height: 22px; border-radius: 5px; border: 1px solid var(--line);
+    background: var(--preview); overflow: hidden;
+  }
+  .theme-swatch::after {
+    content: ""; position: absolute; left: 6px; bottom: 6px;
+    width: 24px; height: 5px; border-radius: 999px; background: var(--preview-accent);
+  }
+  :is(.btn, .icon-btn, .seg-btn, .tab, .link-btn, .theme-option):focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .tabs .tab:focus-visible { outline-offset: -2px; }
+  .settings-nav button[aria-pressed=true] { border-color: var(--accent); }
+  .btn:disabled { cursor: default; opacity: .55; }
+  .settings-card, .panel, .p-dock { transition-property: background-color, border-color; transition-duration: var(--t-1); }
+  .panel { transition-property: opacity, height, background-color, border-color; transition-duration: var(--t-1), var(--t-drawer), var(--t-1), var(--t-1); }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="wall-note" id="wallNote">原型预览 · 鼠标移到屏幕上边缘那条窄条上试一下</div>
+
+  <div class="desk-icons">
+    <div class="desk-icon"><div class="glyph">此</div><span>此电脑</span></div>
+    <div class="desk-icon"><div class="glyph">回</div><span>回收站</span></div>
+    <div class="desk-icon"><div class="glyph">项</div><span>项目</span></div>
+    <div class="desk-icon"><div class="glyph">图</div><span>截图</span></div>
+    <div class="desk-icon"><div class="glyph">稿</div><span>稿件</span></div>
+    <div class="desk-icon"><div class="glyph">工</div><span>工具</span></div>
+  </div>
+
+  <div class="stage-hint">
+    <b>操作</b><br>
+    贴上边缘悬停 → 向下展开　·　<kbd>Ctrl</kbd>+<kbd>空格</kbd> 随时呼出<br>
+    点文字卡 = 复制（带 {{变量}} 的会先弹小表单）　·　点应用 = 启动　·　点图 = 看大图<br>
+    <kbd>/</kbd> 或 <kbd>Ctrl</kbd>+<kbd>F</kbd> 搜索　·　<kbd>Esc</kbd> 清空搜索　·　方向键在卡片间移动<br>
+    抽屉开着时 <kbd>Ctrl</kbd>+<kbd>V</kbd> 或拖文件进来 = 直接存成一项<br>
+    卡片悬停右上角 <b>✎</b> 编辑、<b>×</b> 删除（5 秒内可撤销）<br>
+    右上角 <b>⚙</b> 切换贴边 / 侧边 / 悬浮窗，也能导出导入、恢复示例
+  </div>
+
+  <aside class="drawer collapsed" id="drawer">
+    <div class="handle" id="handle">
+      <div class="grip"></div>
+      <div class="vtext">常用</div>
+      <div class="pin" title="固定展开"></div>
+    </div>
+
+    <div class="panel">
+      <div class="winbar" id="winbar" title="拖动窗口"></div>
+      <div class="p-head">
+        <div class="head-bar">
+          <div class="tab-strip" id="tabStrip">
+            <button type="button" class="icon-btn tab-scroll" id="tabsPrev" aria-label="查看前面的分组" title="查看前面的分组" hidden>‹</button>
+            <nav class="tabs" id="tabs" aria-label="分组"></nav>
+            <button type="button" class="icon-btn tab-scroll" id="tabsNext" aria-label="查看后面的分组" title="查看后面的分组" hidden>›</button>
+          </div>
+          <div class="head-acts">
+            <button class="icon-btn fold-btn" id="foldBtn" title="收起到悬浮球">—</button>
+            <button class="icon-btn" id="setBtn" title="设置">⚙</button>
+          </div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="p-body" id="list"></div>
+      <div class="p-dock">
+        <div class="search">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14" stroke-linecap="round"/>
+          </svg>
+          <input id="search" placeholder="搜索话术、提示词、应用…">
+        </div>
+        <div class="p-foot">
+          <button class="btn primary" id="addBtn">+ 添加</button>
+          <button class="btn" id="groupBtn">分组</button>
+          <button type="button" class="btn" id="backupBtn">备份</button>
+          <span class="foot-note" id="footNote">本地保存</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="ball" id="ball" title="展开面板">常</div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="errbar" id="errBar" hidden>
+    <span class="eb-ic">!</span>
+    <span id="errText"></span>
+    <button class="eb-act" id="errAct" hidden></button>
+    <button class="eb-x" id="errClose" title="关闭">×</button>
+  </div>
+</div>
+
+<div class="varpop" id="varPop" hidden>
+  <div class="vp-head">
+    <span class="vp-title" id="vpTitle"></span>
+    <button class="icon-btn" id="vpClose" title="关闭（Esc）">×</button>
+  </div>
+  <div class="vp-body" id="vpFields"></div>
+  <div class="vp-foot">
+    <span class="vp-tip">回车逐个填，填完即复制</span>
+    <button class="btn" id="vpCancel">取消</button>
+    <button class="btn primary" id="vpOk">复制</button>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <img id="lbImg" alt="">
+  <div class="lb-cap" id="lbCap"></div>
+  <button class="lb-btn lb-close" id="lbClose" title="关闭（Esc）">×</button>
+  <button class="lb-btn lb-prev" id="lbPrev" title="上一张（←）">‹</button>
+  <button class="lb-btn lb-next" id="lbNext" title="下一张（→）">›</button>
+</div>
+
+<div class="modal" id="settingsModal" role="dialog" aria-labelledby="settingsTitle">
+  <div class="sheet settings-sheet">
+    <header class="settings-head">
+      <div class="settings-title">
+        <h3 id="settingsTitle">设置</h3>
+        <button type="button" class="btn primary" id="setClose">完成</button>
+      </div>
+      <nav class="settings-nav" aria-label="设置分类">
+        <button type="button" class="btn" data-settings-page="appearance" aria-pressed="true">显示与布局</button>
+        <button type="button" class="btn" data-settings-page="desktop" aria-pressed="false" hidden>桌面操作</button>
+        <button type="button" class="btn" data-settings-page="data" aria-pressed="false">数据与备份</button>
+      </nav>
+    </header>
+
+    <div class="settings-content">
+      <section class="settings-section" data-settings-section="appearance">
+        <div class="settings-card">
+          <h4>配色主题</h4>
+          <div class="theme-picker" id="themePicker" aria-label="配色主题">
+            <button type="button" class="theme-option" data-theme-choice="system" aria-pressed="false" style="--preview:linear-gradient(115deg,#fbfaf7 50%,#1a202c 50%);--preview-accent:#7aa18d"><span class="theme-swatch" aria-hidden="true"></span>跟随系统</button>
+            <button type="button" class="theme-option" data-theme-choice="paper" aria-pressed="false" style="--preview:#fbfaf7;--preview-accent:#2f6f5e"><span class="theme-swatch" aria-hidden="true"></span>暖白</button>
+            <button type="button" class="theme-option" data-theme-choice="pine" aria-pressed="false" style="--preview:#eef5f0;--preview-accent:#25654e"><span class="theme-swatch" aria-hidden="true"></span>松岚</button>
+            <button type="button" class="theme-option" data-theme-choice="ocean" aria-pressed="false" style="--preview:#eff5fc;--preview-accent:#275e9b"><span class="theme-swatch" aria-hidden="true"></span>海盐</button>
+            <button type="button" class="theme-option" data-theme-choice="iris" aria-pressed="false" style="--preview:#f5f0fa;--preview-accent:#704b94"><span class="theme-swatch" aria-hidden="true"></span>暮紫</button>
+            <button type="button" class="theme-option" data-theme-choice="night" aria-pressed="false" style="--preview:#1a202c;--preview-accent:#a1c7ff"><span class="theme-swatch" aria-hidden="true"></span>深夜</button>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h4>窗口位置</h4>
+          <div class="seg settings-mode" id="segMode">
+            <button class="seg-btn" data-mode="dock">贴上边</button>
+            <button class="seg-btn" data-mode="bottom">贴下边</button>
+            <button class="seg-btn" data-mode="float">悬浮窗</button>
+            <button class="seg-btn" data-mode="left">贴左边</button>
+            <button class="seg-btn" data-mode="side">贴右边</button>
+          </div>
+          <div class="field"><div class="tip" id="modeTip"></div></div>
+        </div>
+        <div class="settings-card">
+          <h4>面板外观</h4>
+          <div class="field">
+            <label for="setWidth">宽度 · <span id="wVal">760</span> px</label>
+            <input type="range" id="setWidth" min="480" max="1200" step="20">
+            <div class="tip">宽度达到 520 px 后使用横向布局。</div>
+          </div>
+          <div class="field">
+            <label for="setHeight">高度 · <span id="hVal">贴合内容</span></label>
+            <input type="range" id="setHeight" min="208" max="648" step="4">
+            <button class="link-btn" id="hAuto" hidden>恢复贴合内容</button>
+          </div>
+          <div class="field">
+            <label for="setOpacity">不透明度 · <span id="opVal">100</span>%</label>
+            <input type="range" id="setOpacity" min="60" max="100" step="1">
+          </div>
+          <div class="field row">
+            <label for="setTop">始终显示在最上层</label>
+            <input type="checkbox" id="setTop">
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section" data-settings-section="desktop" hidden>
+        <div class="settings-card">
+          <h4>快捷键与启动</h4>
+          <div class="field">
+            <label for="shShortcut">呼出 / 收起快捷键</label>
+            <div class="settings-actions">
+              <button type="button" class="btn settings-key" id="shShortcut" aria-pressed="false" aria-describedby="shShortcutHint">读取中…</button>
+              <button type="button" class="btn" id="shShortcutReset">恢复默认</button>
+            </div>
+            <div class="tip" id="shShortcutHint" role="status"></div>
+          </div>
+          <div class="field row">
+            <label for="shAuto">开机自动启动</label>
+            <input type="checkbox" id="shAuto">
+          </div>
+        </div>
+        <div class="settings-card">
+          <h4>悬浮窗</h4>
+          <div class="field">
+            <label for="setIdleFold">闲置后收成小球</label>
+            <select id="setIdleFold">
+              <option value="0">关闭</option>
+              <option value="15">15 秒</option>
+              <option value="30">30 秒</option>
+              <option value="60">1 分钟</option>
+              <option value="120">2 分钟</option>
+            </select>
+            <div class="tip">鼠标离开悬浮窗后开始计时。</div>
+          </div>
+          <div class="field"><button class="btn" id="setResetPos">悬浮窗放回右上角</button></div>
+        </div>
+        <div class="field row">
+          <button type="button" class="btn" id="shQuit">退出 Desklet</button>
+          <span class="tip">关窗会收进托盘。</span>
+        </div>
+      </section>
+
+      <section class="settings-section" data-settings-section="data" hidden>
+        <div class="settings-card">
+          <h4>本机存储</h4>
+          <div class="field"><div class="tip" id="storeInfo">—</div></div>
+        </div>
+        <div class="settings-card">
+          <h4>导入与导出</h4>
+          <div class="settings-actions">
+            <button class="btn primary" id="expBtn">导出备份…</button>
+            <button class="btn" id="impBtn">导入备份</button>
+          </div>
+          <div class="field"><div class="tip">导出时可选择保存位置。备份包含条目和图片，导入会覆盖当前条目。</div></div>
+          <output class="backup-status" id="backupStatus" role="status" hidden></output>
+        </div>
+        <button class="link-btn settings-danger" id="resetBtn">恢复示例数据（会覆盖当前内容）</button>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="groupModal">
+  <div class="sheet">
+    <h3>管理分组</h3>
+    <div id="gList"></div>
+    <div class="field" style="margin-top:14px">
+      <label>新建分组</label>
+      <input id="gNew" placeholder="比如：客服话术 / 小红书选题">
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" id="gCancel">关闭</button>
+      <button class="btn primary" id="gAdd">新建</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h3 id="mHead">添加一条</h3>
+    <div class="field">
+      <label>放到分组</label>
+      <select id="mGroup"></select>
+    </div>
+    <div class="field">
+      <label>标题</label>
+      <input id="mTitle" placeholder="比如：客户催单回复">
+    </div>
+    <div class="field">
+      <label>备注（可选）</label>
+      <input id="mNote" placeholder="一句话说明这条干什么用">
+    </div>
+    <div class="field" id="fContent">
+      <label>内容</label>
+      <textarea id="mContent" placeholder="提示词里用 {{变量}} 标记要临时填的内容"></textarea>
+      <div class="tip">提示词支持 {{变量}}，点击卡片时先填再复制。</div>
+    </div>
+    <div class="field" id="fImage" style="display:none">
+      <label>图片</label>
+      <img id="mImgPrev" class="mini" alt="" style="display:none">
+      <input id="mImage" type="file" accept="image/*">
+      <div class="tip">也可以直接把图片拖进抽屉，或复制后按 Ctrl+V。桌面版会换成系统选图。</div>
+    </div>
+    <div class="field" id="fApp" style="display:none">
+      <label>启动目标</label>
+      <input id="mApp" type="text" placeholder="例如 C:\Program Files\...\app.exe">
+      <div class="tip">原型不会真的启动程序，只弹提示；桌面版会调系统打开。</div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" id="mCancel">取消</button>
+      <button class="btn primary" id="mSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="askModal">
+  <div class="sheet" style="width:368px">
+    <h3 id="askHead">确认</h3>
+    <p class="ask-text" id="askText"></p>
+    <div class="sheet-foot">
+      <button class="btn" id="askNo">取消</button>
+      <button class="btn primary" id="askYes">确定</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script src="shell.js"></script>
+<script>
+(function () {
+  const SH = window.__DESKLET_SHELL__ || { active: false };
+  const DEFAULT_GROUPS = [
+    { id: 'phrase', name: '话术', kind: 'text' },
+    { id: 'prompt', name: '提示词', kind: 'text' },
+    { id: 'app',    name: '应用', kind: 'app' },
+    { id: 'image',  name: '图片', kind: 'image' }
+  ];
+  const STORE_KEY = 'desklet.data.v5';
+  const LEGACY_KEY = 'desklet.data.v4';
+
+  const SEED = [
+    { id: 'p1', group: 'phrase', title: '开场白', note: '客服/私聊第一句', body: '您好，很高兴为您服务，请问有什么可以帮您？' },
+    { id: 'p2', group: 'phrase', title: '客户催单', note: '物流没更新时用', body: '亲，这边帮您查一下物流哦，预计今天下午更新，麻烦稍等一下～' },
+    { id: 'p3', group: 'phrase', title: '拒绝退款', note: '超 7 天无理由', body: '理解您的心情。不过这笔订单已超过 7 天无理由期限，我们这边可以帮您走售后检测流程，您看方便吗？' },
+    { id: 'p4', group: 'phrase', title: '结束语', note: '收尾统一用', body: '感谢您的耐心等待，如果还有其他问题随时找我，祝您生活愉快！' },
+
+    { id: 'q1', group: 'prompt', title: '代码审查', note: '改完代码让它先过一遍', body: '你是资深前端工程师。请审查下面的代码，从性能、可读性、边界情况三方面指出问题，并给出改写后的版本：\n{{代码}}' },
+    { id: 'q2', group: 'prompt', title: '长文压缩成要点', note: '会议记录/文章都能用', body: '把下面内容压缩成 5 条要点，每条不超过 20 字，不要解释：\n{{内容}}' },
+    { id: 'q3', group: 'prompt', title: '标题生成', note: '公众号/小红书开头卡壳时', body: '围绕「{{主题}}」写 8 个标题，要求：口语化、有具体数字或反差、不超过 18 字。' },
+
+    { id: 'a1', group: 'app', title: '终端', note: 'wt.exe', body: '', app: 'wt.exe', color: '#2b2b2b', mono: '终' },
+    { id: 'a2', group: 'app', title: '编辑器', note: 'code.exe', body: '', app: 'code.exe', color: '#2f6f5e', mono: '码' },
+    { id: 'a3', group: 'app', title: '浏览器', note: 'chrome.exe', body: '', app: 'chrome.exe', color: '#2d6cb5', mono: '览' },
+    { id: 'a4', group: 'app', title: '截图', note: 'snipaste.exe', body: '', app: 'snipaste.exe', color: '#c0653f', mono: '图' },
+    { id: 'a6', group: 'app', title: '计算器', note: 'calc.exe', body: '', app: 'calc.exe', color: '#5a5f8a', mono: '算' },
+
+    { id: 'i1', group: 'image', title: '配色样张 · 墨绿', note: '本机示例图，可换', body: '', src: 'assets/demo-1.svg' },
+    { id: 'i2', group: 'image', title: '配色样张 · 靛蓝', note: '本机示例图，可换', body: '', src: 'assets/demo-2.svg' },
+    { id: 'i3', group: 'image', title: '配色样张 · 暖砂', note: '本机示例图，可换', body: '', src: 'assets/demo-3.svg' }
+  ];
+
+  const H_MIN = 208;   /* 面板最矮就这么高 */
+  function curPanelH() {
+    const key = state.settings.mode === 'float' ? '--fh' : '--ph';
+    return Math.round(parseFloat(drawer.style.getPropertyValue(key)) || 0);
+  }
+
+  const IDLE_FOLD_OPTIONS = [0, 15, 30, 60, 120];
+  const THEME_OPTIONS = ['system', 'paper', 'pine', 'ocean', 'iris', 'night'];
+  const systemColors = matchMedia('(prefers-color-scheme: dark)');
+  const DEFAULT_SETTINGS = {
+    theme: 'system',
+    idleFoldSeconds: 30,
+    shortcut: null,
+    mode: 'dock', width: 392, dockWidth: 760, sideWidth: 392,
+    opacity: 100, topmost: true, x: null, y: null,
+    height: 0,          /* 0 = 贴合内容，>0 = 锁定高度（px） */
+    hoverDelay: 90,     /* 鼠标在把手上停多久才展开；0 = 立即。屏幕顶边常被标签栏/播放条占用 */
+  };
+
+  /* ── 图片存 IndexedDB，localStorage 只留文字（避开 5MB 上限） ── */
+  const DB_NAME = 'desklet.assets', DB_VER = 1, STORE_A = 'blobs';
+  const assets = { db: null, cache: new Map(), loaded: false, fallback: false };
+
+  function idbOpen() {
+    return new Promise((resolve) => {
+      let req;
+      try { req = indexedDB.open(DB_NAME, DB_VER); }
+      catch (e) { return resolve(null); }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE_A)) db.createObjectStore(STORE_A);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    });
+  }
+
+  function idbRun(mode, run) {
+    return new Promise((resolve, reject) => {
+      if (!assets.db) return reject(new Error('no-idb'));
+      let tx;
+      try { tx = assets.db.transaction(STORE_A, mode); }
+      catch (e) { return reject(e); }
+      let req;
+      try { req = run(tx.objectStore(STORE_A)); }
+      catch (e) { return reject(e); }
+      tx.oncomplete = () => resolve(req ? req.result : true);
+      tx.onerror = () => reject(tx.error || new Error('idb-error'));
+      tx.onabort = () => reject(tx.error || new Error('idb-abort'));
+    });
+  }
+
+  function assetsLoadAll() {
+    if (!assets.db) return Promise.resolve();
+    return new Promise((resolve) => {
+      let tx;
+      try { tx = assets.db.transaction(STORE_A, 'readonly'); }
+      catch (e) { return resolve(); }
+      const req = tx.objectStore(STORE_A).openCursor();
+      req.onsuccess = () => {
+        const cur = req.result;
+        if (cur) { assets.cache.set(String(cur.key), String(cur.value)); cur.continue(); }
+      };
+      tx.oncomplete = () => { assets.loaded = true; resolve(); };
+      tx.onerror = () => resolve();
+    });
+  }
+
+  function newAid() { return 'a' + Date.now().toString(36) + Math.random().toString(16).slice(2, 7); }
+
+  async function assetPut(id, dataUrl) {
+    if (!assets.db) return false;
+    try { await idbRun('readwrite', (s) => s.put(dataUrl, id)); }
+    catch (e) { assets.fallback = true; return false; }
+    assets.cache.set(id, dataUrl);
+    return true;
+  }
+
+  async function assetDel(id) {
+    assets.cache.delete(id);
+    if (!assets.db) return;
+    try { await idbRun('readwrite', (s) => s.delete(id)); } catch (e) {}
+  }
+
+  /* 没有任何条目引用的图片，启动时清掉（撤销只在本次会话内有效） */
+  async function assetGC() {
+    if (!assets.db || !assets.loaded) return;
+    const used = new Set();
+    state.items.forEach((it) => {
+      if (typeof it.src === 'string' && it.src.indexOf('idb:') === 0) used.add(it.src.slice(4));
+    });
+    const orphans = Array.from(assets.cache.keys()).filter((id) => !used.has(id));
+    for (const id of orphans) await assetDel(id);
+  }
+
+  /* 把图片写进 IndexedDB；不可用时退回内联 dataURL */
+  async function attachImage(item, dataUrl) {
+    const id = newAid();
+    if (await assetPut(id, dataUrl)) item.src = 'idb:' + id;
+    else item.src = dataUrl;
+    return item.src;
+  }
+
+  /* 把还留在自存数据里的 base64 图片搬进 IndexedDB，返回搬了几张 */
+  async function externalizeImages() {
+    if (!assets.db) return 0;
+    let n = 0;
+    for (const it of state.items) {
+      if (typeof it.src === 'string' && it.src.indexOf('data:image/') === 0) {
+        const id = newAid();
+        if (await assetPut(id, it.src)) { it.src = 'idb:' + id; n++; }
+      }
+    }
+    if (n) { try { render(); } catch (e) {} }
+    return n;
+  }
+
+  function imgSrc(it) {
+    const s = it && it.src;
+    if (!s) return 'assets/placeholder.svg';
+    if (s.indexOf('idb:') === 0) return assets.cache.get(s.slice(4)) || 'assets/placeholder.svg';
+    return s;
+  }
+
+  const boot = loadStore();
+  let state = {
+    groups: boot.groups,
+    items: boot.items,
+    settings: boot.settings,
+    tab: boot.groups[0].id,
+    query: ''
+  };
+  let pinned = false, closeTimer = null;
+
+  const $ = (s) => document.querySelector(s);
+  const drawer = $('#drawer'), listEl = $('#list'), tabsEl = $('#tabs'), toastEl = $('#toast');
+
+  /* 旧示例图（网上截图）已移除，老数据里的引用一并换成本机样张 */
+  function migrate(items) {
+    return items.map((it) => {
+      if (it && typeof it.src === 'string' && /assets\/sample-[123]\.png$/.test(it.src)) {
+        const n = it.src.match(/-(\d)\.png$/)[1];
+        return Object.assign({}, it, {
+          src: 'assets/demo-' + n + '.svg',
+          title: '配色样张 · ' + ['墨绿', '靛蓝', '暖砂'][+n - 1],
+          note: '本机示例图，可换'
+        });
+      }
+      return it;
+    });
+  }
+
+  /* 本地数据是外部来的（旧版本、导入、手改），一条坏记录就能让整面列表渲染中断。
+     进内存前统一过一遍：丢掉非对象，字段一律转成字符串，分组找不到就落回第一组。 */
+  function sanitizeGroups(list) {
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((g) => {
+      if (!g || typeof g !== 'object') return;
+      const id = String(g.id || '').trim();
+      if (!id || out.some((x) => x.id === id)) return;
+      out.push({
+        id,
+        name: String(g.name == null ? '未命名' : g.name).slice(0, 30) || '未命名',
+        kind: (g.kind === 'app' || g.kind === 'image') ? g.kind : 'text'
+      });
+    });
+    return out.length ? out : DEFAULT_GROUPS.slice();
+  }
+  function sanitizeItems(list, groups) {
+    const first = groups[0].id;
+    const known = groups.map((g) => g.id);
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((it, i) => {
+      if (!it || typeof it !== 'object' || Array.isArray(it)) return;
+      const o = Object.assign({}, it);            // 保留 hot / useCount 之类的附加字段
+      o.id = String(it.id || ('it' + i + Date.now().toString(36)));
+      o.group = known.indexOf(String(it.group)) >= 0 ? String(it.group) : first;
+      o.title = String(it.title == null ? '未命名' : it.title).slice(0, 120) || '未命名';
+      o.note = it.note == null ? '' : String(it.note).slice(0, 300);
+      o.body = it.body == null ? '' : String(it.body);
+      if (it.app != null) o.app = String(it.app);
+      if (it.color != null) o.color = String(it.color);
+      if (it.mono != null) o.mono = String(it.mono).slice(0, 2);
+      if (it.src != null && typeof it.src === 'string') o.src = it.src; else if ('src' in o) delete o.src;
+      out.push(o);
+    });
+    return out;
+  }
+  function sanitizeIdleFold(value) {
+    return IDLE_FOLD_OPTIONS.includes(value) ? value : DEFAULT_SETTINGS.idleFoldSeconds;
+  }
+
+  function sanitizeSettings(src) {
+    const s = Object.assign({}, DEFAULT_SETTINGS, (src && typeof src === 'object') ? src : {});
+    if (!['dock', 'bottom', 'left', 'side', 'float'].includes(s.mode)) s.mode = DEFAULT_SETTINGS.mode;
+    ['width', 'dockWidth', 'sideWidth', 'opacity'].forEach((k) => {
+      const n = Math.round(Number(s[k]));
+      s[k] = Number.isFinite(n) ? n : DEFAULT_SETTINGS[k];
+    });
+    s.idleFoldSeconds = sanitizeIdleFold(s.idleFoldSeconds);
+    if (!THEME_OPTIONS.includes(s.theme)) s.theme = DEFAULT_SETTINGS.theme;
+    s.shortcut = typeof s.shortcut === "string" && s.shortcut.length <= 80 ? s.shortcut : null;
+    const h = Math.round(Number(s.height));
+    s.height = Number.isFinite(h) && h > 0 ? h : 0;
+    return s;
+  }
+
+  function loadStore() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && Array.isArray(d.items) && d.items.length) {
+          const groups = sanitizeGroups(d.groups);
+          const items = migrate(sanitizeItems(d.items, groups));
+          if (items.length) {
+            return { items, groups, settings: sanitizeSettings(d.settings) };
+          }
+        }
+      }
+    } catch (e) { loadStore.err = e; }
+    /* 本地确实有数据、但读不出来：先把原文另存一份，再拿示例数据顶上，
+       免得下一次保存把仅剩的原始内容覆盖掉（那才是真的「内容消失」） */
+    let salvage = '';
+    try { salvage = localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_KEY) || ''; } catch (e) {}
+    if (salvage) {
+      let stashed = false;
+      try { localStorage.setItem(STORE_KEY + '.salvage', salvage); stashed = true; } catch (e) {}
+      return {
+        items: SEED.slice(),
+        groups: DEFAULT_GROUPS.slice(),
+        settings: Object.assign({}, DEFAULT_SETTINGS),
+        fresh: stashed,          /* 存下了副本才允许正常覆盖；存不下就先别写 */
+        salvage                /* 原文留在内存里，引导用户下载 */
+      };
+    }
+    return {
+      items: SEED.slice(),
+      groups: DEFAULT_GROUPS.slice(),
+      settings: Object.assign({}, DEFAULT_SETTINGS),
+      fresh: true
+    };
+  }
+
+  let saveFailed = false, saveIssue = '';
+  function save() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        v: 5, items: state.items, groups: state.groups, settings: state.settings
+      }));
+      saveFailed = false; saveIssue = '';
+      setFoot();
+      return true;
+    } catch (e) {
+      const quota = !!e && /quota/i.test(String(e.name) + String(e.message));
+      saveFailed = true;
+      saveIssue = quota ? '空间不足' : '写入被拒';
+      setFoot();
+      /* 撑爆本地存储的多半还是内联 base64 图片：先把它们搬进 IndexedDB，再存一次 */
+      if (quota && !save._fixing) {
+        save._fixing = true;
+        externalizeImages().then((n) => {
+          save._fixing = false;
+          if (n) { toast('图片已搬进本地图片库，重新保存了一次', { ms: 2600 }); save(); }
+        }).catch(() => { save._fixing = false; });
+      }
+      toast(quota ? '本地空间不够，这次没存上' : '保存失败：' + ((e && e.name) || '未知错误'),
+        { ms: 4600, raw: true, action: '导出备份', onAction: exportBackup });
+      return false;
+    }
+  }
+
+  function setFoot() {
+    const el = $('#footNote');
+    if (!el) return;
+    if (saveFailed) {
+      el.textContent = '保存失败 · ' + (saveIssue || '未写入');
+      el.classList.add('bad');
+    } else {
+      el.textContent = '本地保存 · ' + state.items.length + ' 项';
+      el.classList.remove('bad');
+    }
+  }
+  function varsOf(text) {
+    const out = [];
+    String(text || '').replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, name) => { if (!out.includes(name)) out.push(name); return m; });
+    return out;
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function toast(msg, opt) {
+    opt = opt || {};
+    const text = (saveFailed && !opt.raw) ? msg + ' · 本地空间不足，未保存' : msg;
+    toastEl.textContent = '';
+    const span = document.createElement('span');
+    span.textContent = text;
+    toastEl.appendChild(span);
+    if (opt.action) {
+      const b = document.createElement('button');
+      b.className = 't-act';
+      b.textContent = opt.action;
+      b.onclick = () => {
+        hideToast();
+        if (opt.onAction) opt.onAction();
+      };
+      toastEl.appendChild(b);
+      toastEl.classList.add('has-act');
+    } else {
+      toastEl.classList.remove('has-act');
+    }
+    toastEl.classList.add('on');
+    placeToast();
+    clearTimeout(toast._t);
+    toast._t = setTimeout(hideToast, opt.action ? 5200 : (opt.ms || 1600));
+  }
+  /* 提示条挂在面板下沿，别跑到整屏最底下 */
+  function placeToast() {
+    const r = drawer.getBoundingClientRect();
+    const openish = state.settings.mode === 'float' || !drawer.classList.contains('collapsed');
+    const cx = openish ? r.left + r.width / 2 : window.innerWidth / 2;
+    const cy = openish ? Math.min(r.bottom + 10, window.innerHeight - 64) : Math.max(90, r.bottom + 12);
+    toastEl.style.left = Math.round(Math.min(Math.max(cx, 130), window.innerWidth - 130)) + 'px';
+    toastEl.style.top = Math.round(Math.max(70, cy)) + 'px';
+    toastEl.style.bottom = 'auto';
+  }
+  function hideToast() {
+    clearTimeout(toast._t);
+    toastEl.classList.remove('on');
+    toastEl.classList.remove('has-act');
+  }
+
+  /* 通用二次确认 */
+  let askResolve = null;
+  function askConfirm(opt) {
+    return new Promise((resolve) => {
+      const m = $('#askModal');
+      $('#askHead').textContent = opt.title || '确认';
+      $('#askText').textContent = opt.text || '';
+      const yes = $('#askYes'), no = $('#askNo');
+      yes.textContent = opt.ok || '确定';
+      yes.className = 'btn ' + (opt.danger ? 'danger' : 'primary');
+      const done = (v) => {
+        if (!askResolve) return;
+        askResolve = null;
+        m.classList.remove('on');
+        yes.onclick = null;
+        no.onclick = null;
+        resolve(v);
+      };
+      askResolve = done;
+      yes.onclick = () => done(true);
+      no.onclick = () => done(false);
+      m.classList.add('on');
+      setTimeout(() => no.focus(), 40);
+    });
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+        return true;
+      } catch (e2) { return false; }
+    }
+  }
+
+  const tabStrip = $('#tabStrip'), tabsPrev = $('#tabsPrev'), tabsNext = $('#tabsNext');
+
+  function syncTabScroll() {
+    const overflow = tabStrip.clientWidth > 0 && tabsEl.scrollWidth > tabStrip.clientWidth + 1;
+    tabsPrev.hidden = tabsNext.hidden = !overflow;
+    tabsPrev.disabled = tabsEl.scrollLeft <= 1;
+    tabsNext.disabled = tabsEl.scrollLeft + tabsEl.clientWidth >= tabsEl.scrollWidth - 1;
+  }
+
+  function revealActiveTab() {
+    const tab = tabsEl.querySelector('.tab.on');
+    if (!tab || !tabsEl.clientWidth) return;
+    const bar = tabsEl.getBoundingClientRect();
+    const item = tab.getBoundingClientRect();
+    if (item.left < bar.left) tabsEl.scrollLeft += item.left - bar.left;
+    else if (item.right > bar.right) tabsEl.scrollLeft += item.right - bar.right;
+  }
+
+  const tabLayout = new ResizeObserver(() => {
+    syncTabScroll();
+    revealActiveTab();
+    syncTabScroll();
+  });
+  tabLayout.observe(tabStrip);
+  tabsEl.addEventListener('scroll', syncTabScroll, { passive: true });
+  tabsPrev.onclick = () => { tabsEl.scrollLeft -= tabsEl.clientWidth * .8; };
+  tabsNext.onclick = () => { tabsEl.scrollLeft += tabsEl.clientWidth * .8; };
+  tabsEl.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+    const before = tabsEl.scrollLeft;
+    const step = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? tabsEl.clientWidth : 1;
+    tabsEl.scrollLeft += e.deltaY * step;
+    if (tabsEl.scrollLeft !== before) e.preventDefault();
+  }, { passive: false });
+
+  function renderTabs() {
+    const offset = tabsEl.scrollLeft;
+    tabsEl.innerHTML = state.groups.map((g) => {
+      const n = state.items.filter((i) => i.group === g.id).length;
+      const on = state.tab === g.id && !state.query ? ' on' : '';
+      return `<button class="tab${on}" data-tab="${esc(g.id)}" title="${esc(g.name)}"><span class="tab-name">${esc(g.name)}</span><span class="n">${n}</span></button>`;
+    }).join('');
+
+    syncTabScroll();
+    tabsEl.scrollLeft = offset;
+    revealActiveTab();
+    syncTabScroll();
+    tabsEl.querySelectorAll('[data-tab]').forEach((b) => {
+      b.onclick = () => {
+        const hadFocus = document.activeElement === b;
+        state.tab = b.dataset.tab;
+        state.query = '';
+        $('#search').value = '';
+        render();
+        if (hadFocus) tabsEl.querySelector('.tab.on')?.focus({ preventScroll: true });
+      };
+    });
+  }
+
+  function cardActions(item, kind) {
+    return `<div class="c-acts">
+      ${kind !== 'app' && kind !== 'image'
+        ? '<button class="icon-btn" data-act="copy" title="复制">⧉</button>' : ''}
+      <button class="icon-btn" data-act="edit" title="编辑">✎</button>
+      <button class="icon-btn del" data-act="del" title="删除">×</button>
+    </div>`;
+  }
+
+  function renderText(list) {
+    return list.map((it) => {
+      const vars = varsOf(it.body);
+      const preview = String(it.body || '').replace(/\n/g, ' ');
+      return `<article class="card ${vars.length ? 'mono' : ''}" data-id="${esc(it.id)}" tabindex="0" role="button">
+        <div class="c-top"><div class="c-title">${esc(it.title)}</div></div>
+        <div class="c-body">${esc(preview)}</div>
+        ${it.note ? `<div class="c-note">${esc(it.note)}</div>` : ''}
+        ${vars.length ? `<div class="vars">${vars.map((v) => `<span class="chip">${esc(v)}</span>`).join('')}</div>` : ''}
+        ${cardActions(it, 'text')}
+      </article>`;
+    }).join('');
+  }
+
+  function renderApps(list) {
+    return `<div class="tiles">${list.map((it) => `
+      <div class="tile" data-id="${esc(it.id)}" tabindex="0" role="button">
+        <div class="sq" style="background:${/^#[\da-f]{6}$/i.test(it.color || '') ? it.color : '#4b5563'}"${it.app ? ` data-icon="${esc(it.app)}"` : ''}>${esc(it.mono || String(it.title || '?').slice(0, 1))}</div>
+        <div class="nm"${it.note ? ` title="${esc(it.note)}"` : ''}>${esc(it.title)}</div>
+        <div class="c-acts">
+          <button class="icon-btn" data-act="edit" title="编辑">✎</button>
+          <button class="icon-btn del" data-act="del" title="删除">×</button>
+        </div>
+      </div>`).join('')}</div>`;
+  }
+
+  const iconCache = new Map();
+  function paintIcon(sq, url) {
+    const img = new Image();
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.onload = () => {
+      if (!sq.isConnected) return;
+      sq.classList.add('has-icon');
+      sq.replaceChildren(img);
+    };
+    img.src = url;
+  }
+  function hydrateIcons() {
+    listEl.querySelectorAll('.sq[data-icon]').forEach((sq) => {
+      if (sq.classList.contains('has-icon')) return;
+      const target = sq.dataset.icon;
+      const link = webShortcut(target);
+      if (link) {
+        paintIcon(sq, new URL('/favicon.ico', link).href);
+        return;
+      }
+      if (!SH.active) return;
+      const cached = iconCache.get(target);
+      if (cached && cached.until > Date.now()) {
+        cached.promise.then((icon) => { if (icon) paintIcon(sq, icon); });
+        return;
+      }
+      if (iconCache.size >= 256) iconCache.clear();
+      const entry = { until: Date.now() + 60000, promise: SH.icon(target).catch(() => {
+        entry.until = Date.now() + 5000;
+        return null;
+      }) };
+      iconCache.set(target, entry);
+      entry.promise.then((icon) => { if (icon) paintIcon(sq, icon); });
+    });
+  }
+
+  function renderImages(list) {
+    return `<div class="thumbs">${list.map((it) => `
+      <div class="thumb" data-id="${esc(it.id)}" tabindex="0" role="button">
+        <img src="${esc(imgSrc(it))}" alt="${esc(it.title)}" loading="lazy">
+        <div class="cap">${esc(it.title)}</div>
+        <div class="c-acts">
+          <button class="icon-btn" data-act="edit" title="编辑">✎</button>
+          <button class="icon-btn del" data-act="del" title="删除">×</button>
+        </div>
+      </div>`).join('')}</div>`;
+  }
+
+  /* 搜索结果：紧凑列表（标题 + 命中片段 + 分组徽标） */
+  function hl(text, q) {
+    const s = String(text == null ? '' : text);
+    if (!q) return esc(s);
+    const i = s.toLowerCase().indexOf(q);
+    if (i < 0) return esc(s);
+    return esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + q.length)) + '</mark>' + esc(s.slice(i + q.length));
+  }
+  function snippetOf(it, q) {
+    const raw = String(it.body || it.note || it.app || '').replace(/\s+/g, ' ').trim();
+    if (!raw) return '';
+    const i = raw.toLowerCase().indexOf(q);
+    if (i < 0) return esc(raw.slice(0, 84));
+    const start = Math.max(0, i - 22);
+    return (start > 0 ? '…' : '') + hl(raw.slice(start, start + 92), q);
+  }
+  function renderSearchRows(hit, q) {
+    const head = `<div class="s-head">找到 <b>${hit.length}</b> 条<button class="s-clear" id="sClear">清除</button></div>`;
+    return head + hit.map((it) => {
+      const g = state.groups.find((x) => x.id === it.group) || { name: '' };
+      const d = snippetOf(it, q);
+      return `<div class="srow" data-id="${esc(it.id)}" tabindex="0" role="button">
+        <div class="s-main">
+          <div class="s-t">${hl(it.title, q)}</div>
+          ${d ? `<div class="s-d">${d}</div>` : ''}
+        </div>
+        <span class="s-g">${esc(g.name)}</span>
+        <div class="c-acts">
+          <button class="icon-btn" data-act="edit" title="编辑">✎</button>
+          <button class="icon-btn del" data-act="del" title="删除">×</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function emptyBlock(kind, q) {
+    if (kind === 'search') {
+      return `<div class="empty">
+        <div class="e-ic">◌</div>
+        <div class="e-t">没找到「${esc(q)}」</div>
+        <div class="e-s">换个词试试，也可以直接用它新建一条</div>
+        <button class="btn primary e-btn" id="emptyAdd">+ 用「${esc(q)}」新建</button>
+      </div>`;
+    }
+    return `<div class="empty">
+      <div class="e-ic">◇</div>
+      <div class="e-t">这一组还是空的</div>
+      <div class="e-s">话术、提示词、应用、图片都能放进来</div>
+      <button class="btn primary e-btn" id="emptyAdd">+ 添加第一条</button>
+    </div>`;
+  }
+  function bindEmpty() {
+    const ea = $('#emptyAdd');
+    if (ea) ea.onclick = (e) => {
+      e.stopPropagation();
+      const t = state.query.trim();
+      state.query = '';
+      $('#search').value = '';
+      render();
+      openAdd(t);
+    };
+    const sc = $('#sClear');
+    if (sc) sc.onclick = () => {
+      state.query = '';
+      $('#search').value = '';
+      render();
+      $('#search').focus();
+    };
+  }
+
+  let lastView = '', lastTab = '';
+  /* 系统里开了「减少动态效果」就别自作主张 */
+  function reduceMotion() {
+    return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+  /* 换分组时内容整体轻轻托一下，别硬切 */
+  function enterList() {
+    if (reduceMotion() || !listEl.animate || document.hidden) return;
+    const cards = Array.prototype.slice.call(listEl.querySelectorAll('[data-id]'));
+    if (!cards.length) return;
+    /* 前 8 张依次延迟 18ms 上浮淡入；再多就不等了，否则最后一张要等半秒才出现。
+       fill:backwards 让延迟期间保持第一帧，不然会先闪出来再淡入 */
+    const N = Math.min(8, cards.length);
+    const anims = [];
+    for (let i = 0; i < N; i++) {
+      const el = cards[i];
+      if (!el.animate) continue;
+      anims.push(el.animate(
+        [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 200, delay: i * 18, easing: 'cubic-bezier(.22,.68,.28,1)', fill: 'backwards' }
+      ));
+    }
+    /* 兜底：动画被系统冻结或被打断时，别把卡片永久留在透明状态 */
+    setTimeout(() => {
+      anims.forEach((a) => {
+        try { if (a.playState !== 'finished') a.finish(); } catch (e) {}
+      });
+    }, N * 18 + 260);
+  }
+  /* 渲染中途出错绝不能留白：至少让人看见「出错了」，并且能把数据导出救回来 */
+  function showRenderError(err) {
+    const msg = String((err && (err.message || err.name)) || err || '未知错误');
+    console.error('[desklet] 渲染失败', err);
+    reportError('渲染出错：' + msg);
+    try {
+      document.body.classList.remove('searching');
+      listEl.innerHTML = `<div class="empty err">
+        <div class="e-ic">!</div>
+        <div class="e-t">内容没能画出来</div>
+        <div class="e-s">${esc(msg)}</div>
+        <button class="btn primary e-btn" id="errReload">重新加载面板</button>
+        <button class="btn e-btn" id="errExport">先导出备份</button>
+      </div>`;
+      const rl = $('#errReload'), ex = $('#errExport');
+      if (rl) rl.onclick = () => location.reload();
+      if (ex) ex.onclick = exportBackup;
+      fitPanel();
+    } catch (e2) { /* 兜底也失败就算了，别再抛一轮 */ }
+  }
+
+  function render() {
+    try {
+      /* 脏数据（null / 类型不对）先校正，别让一处小问题把整面搞空 */
+      state.query = typeof state.query === 'string' ? state.query : '';
+      if (!Array.isArray(state.groups) || !state.groups.length) state.groups = DEFAULT_GROUPS.slice();
+      if (!state.groups.some((g) => g.id === state.tab)) state.tab = state.groups[0].id;
+      renderList();
+    } catch (err) {
+      showRenderError(err);
+    }
+  }
+
+  function renderList() {
+    renderTabs();
+    const q = state.query.trim().toLowerCase();
+    document.body.classList.toggle('searching', !!q);
+    /* 换分组 / 改搜索词回到顶部，否则新内容一进来就停在半截 */
+    const view = state.tab + '|' + q;
+    if (view !== lastView) { listEl.scrollTop = 0; lastView = view; }
+    let html = '';
+
+    if (q) {
+      const hit = state.items.filter((i) =>
+        (i.title + ' ' + (i.body || '') + ' ' + (i.app || '') + ' ' + (i.note || '')).toLowerCase().includes(q));
+      if (!hit.length) {
+        listEl.innerHTML = emptyBlock('search', state.query.trim());
+        bindEmpty();
+        fitPanel();
+        return;
+      }
+      html = renderSearchRows(hit, q);
+    } else {
+      const g = state.groups.find((x) => x.id === state.tab) || state.groups[0];
+      const sub = state.items.filter((i) => i.group === g.id);
+      if (!sub.length) {
+        html = emptyBlock('group', '');
+      } else {
+        html = g.kind === 'app' ? renderApps(sub) : g.kind === 'image' ? renderImages(sub) : renderText(sub);
+      }
+    }
+    listEl.innerHTML = html || emptyBlock('group', '');
+    hydrateIcons();
+    bindCards();
+    bindEmpty();
+    fitPanel();
+    if (state.tab !== lastTab) {
+      if (lastTab) enterList();   /* 首屏不播：页面刚打开时容器尺寸还没定，动画容易卡在起点 */
+      lastTab = state.tab;
+    }
+  }
+
+  /* 面板高度贴合内容，别留一大条空白（贴边抽屉 & 悬浮窗都适用） */
+  function isSideMode(mode) { return mode === 'side' || mode === 'left'; }
+
+  function fitPanel() {
+    const mode = state.settings.mode;
+    if (isSideMode(mode) || SH.resizing || drawer.classList.contains('folding')) return;
+    const head = document.querySelector('.p-head');
+    const div = document.querySelector('.divider');
+    const dock = document.querySelector('.p-dock');
+    if (!head || !div || !dock) return;
+    /* 收起 / 隐藏时量不到尺寸，等展开后再算（收起时 panel 只剩 1px 边，别再量） */
+    if (drawer.classList.contains('collapsed') || listEl.getBoundingClientRect().height <= 4) return;
+    const gap = parseFloat(getComputedStyle(div).marginTop) || 0;
+    /* #list 会被 flex 拉伸，scrollHeight 不可靠；按条目元素量位置
+       （应用/图片在横排时 .tiles/.thumbs 是 display:contents，只能查 [data-id]） */
+    const lr = listEl.getBoundingClientRect();
+    const cs = getComputedStyle(listEl);
+    let contentH = 0, lastEl = null;
+    const nodes = listEl.querySelectorAll('[data-id]');
+    const measure = (el) => {
+      const r = el.getBoundingClientRect();
+      if (r.height <= 0) return;
+      const bottom = r.bottom - lr.top;
+      if (bottom > contentH) { contentH = bottom; lastEl = el; }
+    };
+    if (nodes.length) nodes.forEach(measure);
+    else if (listEl.firstElementChild) measure(listEl.firstElementChild);
+    /* 元素底边既不含自身 margin，也不含列表的 padding-bottom；漏掉就会把最后一张裁掉一截 */
+    if (lastEl) {
+      const lb = parseFloat(getComputedStyle(lastEl).marginBottom) || 0;
+      contentH += Math.max(lb, parseFloat(cs.paddingBottom) || 0);
+    }
+    /* 面板已滚动时，元素相对可视区的坐标会整体上移，补回滚动量才是真实内容高度 */
+    contentH += listEl.scrollTop || 0;
+    /* 只有仍在横滚的布局（悬浮窗宽版）要给横向滚动条留 8px */
+    const bar = document.body.classList.contains('horizontal')
+      && !document.body.classList.contains('dock') ? 8 : 0;
+    let need = head.getBoundingClientRect().height
+      + div.getBoundingClientRect().height + gap
+      + contentH + bar
+      + dock.getBoundingClientRect().height + 2;
+
+    /* 设置、编辑这类长表单：面板临时长高。
+       桌面壳的窗口高就是面板高，不给空间就得在 340px 的窗口里翻 900px 的内容 */
+    if (document.querySelector('.modal.on')) need = Math.max(need, Math.min(maxPanelH(), 600));
+
+    /* 搜索时高度只增不减。搜索框在面板底部，面板一缩它就上跳，
+       鼠标所在的位置会突然掉到面板外，触发 mouseleave 把抽屉收走。 */
+    /* 搜索期间高度保持不变：搜索框在面板底部，一旦缩回去，
+       指针就会掉到面板外，Chrome 补发的 mouseleave 会把抽屉收走 */
+    const keepTall = (v, key) => {
+      if (!state.query) return v;
+      const cur = parseFloat(drawer.style.getPropertyValue(key)) || 0;
+      return cur > 0 ? Math.max(v, cur) : v;
+    };
+
+    if (mode === 'float') {
+      const winbar = document.querySelector('.winbar');
+      need += winbar ? winbar.getBoundingClientRect().height : 14;
+      const maxF = maxPanelH();
+      const fixedF = Math.round(state.settings.height || 0);
+      const h = fixedF > 0
+        ? Math.min(Math.max(fixedF, 240), maxF)
+        : Math.min(Math.max(Math.round(keepTall(need, '--fh')), 240), maxF);
+      const curF = parseFloat(drawer.style.getPropertyValue('--fh')) || 0;
+      if (Math.abs(curF - h) >= 2) drawer.style.setProperty('--fh', h + 'px');
+      if (SH.active) SH.sync(true);
+      return;
+    }
+    /* 锁了高度就不再跟内容走（keepTall 是为搜索时保持长度，固定高度本来就不缩） */
+    const maxH = maxPanelH();
+    const fixed = Math.round(state.settings.height || 0);
+    const h = fixed > 0
+      ? Math.min(Math.max(fixed, H_MIN), maxH)
+      : Math.min(Math.max(Math.round(keepTall(need, '--ph')), H_MIN), maxH);
+    /* 差 1~2px 也重设一次，会让正在跑的过渡改目标、末尾抖一下，干脆不动 */
+    const curH = parseFloat(drawer.style.getPropertyValue('--ph')) || 0;
+    if (Math.abs(curH - h) >= 2) drawer.style.setProperty('--ph', h + 'px');
+    if (SH.active) SH.sync(true);
+    syncMoreSoon();
+  }
+
+  /* 贴边时列表还有内容没露出来 → 底栏上方显一层淡出 */
+  function syncMore() {
+    if (!document.body.classList.contains('dock')) {
+      document.body.classList.remove('scroll-more', 'scroll-prev');
+      return;
+    }
+    const y = listEl.scrollTop;
+    const more = listEl.scrollHeight - y - listEl.clientHeight > 4;
+    document.body.classList.toggle('scroll-more', more);
+    document.body.classList.toggle('scroll-prev', y > 4);
+  }
+  /* 面板高度有 260ms 过渡，量 clientHeight 要等它走完 */
+  function syncMoreSoon() {
+    requestAnimationFrame(syncMore);
+    clearTimeout(syncMoreSoon._t);
+    syncMoreSoon._t = setTimeout(syncMore, 340);
+  }
+
+  function bindCards() {
+    listEl.querySelectorAll('[data-id]').forEach((el) => {
+      el.addEventListener('click', (ev) => handleCard(el, ev));
+      el.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        if (ev.target !== el) return;
+        ev.preventDefault();
+        handleCard(el, ev);
+      });
+    });
+  }
+
+  function handleCard(el, ev) {
+    const actBtn = ev.target.closest ? ev.target.closest('[data-act]') : null;
+    const item = state.items.find((i) => i.id === el.dataset.id);
+    if (!item) return;
+    if (actBtn) {
+      ev.stopPropagation();
+      const act = actBtn.dataset.act;
+      if (act === 'del') removeItem(item.id);
+      else if (act === 'edit') openEditor(item);
+      else if (act === 'copy') doCopy(item, el);
+      return;
+    }
+    const g = state.groups.find((x) => x.id === item.group) || { kind: 'text' };
+    if (g.kind === 'app') {
+      const targetPath = item.app || '';
+      if (SH.active) {
+        if (!targetPath) { toast('这一项还没设置启动路径'); return; }
+        SH.launch(targetPath).then(() => {
+          toast('已启动：' + item.title);
+          close();
+        }).catch((err) => {
+          const msg = (err && (err.message || err)) || '';
+          toast('启动失败：' + (msg || targetPath));
+        });
+      } else {
+        toast('启动：' + targetPath + '（原型模拟）');
+      }
+      return;
+    }
+    if (g.kind === 'image') { openLightbox(item); return; }
+    doCopy(item, el);
+  }
+
+  /* 删除可撤销：5 秒内点一下就能拿回来 */
+  function removeItem(id) {
+    const idx = state.items.findIndex((i) => i.id === id);
+    if (idx < 0) return;
+    const removed = state.items.splice(idx, 1)[0];
+    save(); render();
+    toast('已删除「' + removed.title + '」', {
+      action: '撤销',
+      onAction: () => {
+        state.items.splice(Math.min(idx, state.items.length), 0, removed);
+        state.tab = removed.group;
+        state.query = '';
+        const s = $('#search'); if (s) s.value = '';
+        save(); render();
+        toast('已恢复「' + removed.title + '」');
+      }
+    });
+  }
+
+  /* 复制成功的就地反馈 */
+  function flashCopied(el) {
+    if (!el || !el.classList) return;
+    el.classList.add('copied');
+    clearTimeout(el._ct);
+    el._ct = setTimeout(() => el.classList.remove('copied'), 1150);
+  }
+
+  async function doCopy(item, el) {
+    const vars = varsOf(item.body);
+    if (vars.length) { openVarPop(item, el); return; }
+    const ok = await copyText(item.body);
+    if (ok) { flashCopied(el); toast('已复制：' + item.title); }
+    else toast('复制失败');
+  }
+
+  /* ── 变量内联填充 ───────────────────────── */
+  let vpItem = null, vpAnchor = null;
+
+  function closeVarPop() {
+    const p = $('#varPop');
+    if (p) p.hidden = true;
+    vpItem = null;
+    vpAnchor = null;
+  }
+
+  function openVarPop(item, anchor) {
+    const vars = varsOf(item.body);
+    if (!vars.length) { closeVarPop(); return; }
+    vpItem = item;
+    vpAnchor = anchor || null;
+
+    const pop = $('#varPop');
+    $('#vpTitle').innerHTML = esc(item.title) + ` <span>· ${vars.length} 个变量</span>`;
+    $('#vpFields').innerHTML = vars.map((v, i) => `
+      <div class="vp-field">
+        <label for="vpF${i}">${esc(v)}</label>
+        <input id="vpF${i}" data-var="${esc(v)}" autocomplete="off" spellcheck="false">
+      </div>`).join('');
+
+    pop.hidden = false;
+
+    const r = anchor && anchor.getBoundingClientRect
+      ? anchor.getBoundingClientRect()
+      : { left: window.innerWidth / 2 - 133, top: 120, bottom: 150 };
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - pw - 8);
+    let top = r.bottom + 8;
+    if (top + ph > window.innerHeight - 10) top = Math.max(10, r.top - ph - 8);
+    pop.style.left = Math.round(left) + 'px';
+    pop.style.top = Math.round(top) + 'px';
+
+    if (!reduceMotion() && pop.animate) {
+      pop.animate(
+        [{ opacity: 0, transform: 'translateY(-4px) scale(.99)' }, { opacity: 1, transform: 'none' }],
+        { duration: 170, easing: 'cubic-bezier(.22,.68,.28,1)' }
+      );
+    }
+
+    const first = pop.querySelector('input');
+    if (first) setTimeout(() => { first.focus(); }, 30);
+  }
+
+  $('#vpFields').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const inputs = Array.from($('#vpFields').querySelectorAll('input'));
+    const i = inputs.indexOf(document.activeElement);
+    if (i >= 0 && i < inputs.length - 1) { inputs[i + 1].focus(); return; }
+    $('#vpOk').click();
+  });
+  $('#vpClose').onclick = closeVarPop;
+  $('#vpCancel').onclick = closeVarPop;
+  $('#vpOk').onclick = async () => {
+    if (!vpItem) { closeVarPop(); return; }
+    const filled = {};
+    $('#vpFields').querySelectorAll('input').forEach((i) => { filled[i.dataset.var] = i.value; });
+    const text = String(vpItem.body).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, n) => (filled[n] != null ? filled[n] : m));
+    const anchor = vpAnchor;
+    closeVarPop();
+    const ok = await copyText(text);
+    if (ok) {
+      flashCopied(anchor);
+      toast('已复制（' + Object.keys(filled).length + ' 个变量已填）');
+    } else toast('复制失败');
+  };
+  /* 点别处 / 滚动列表就收起，避免表单飘在无关内容上 */
+  document.addEventListener('mousedown', (e) => {
+    const p = $('#varPop');
+    if (!p || p.hidden) return;
+    if (p.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('[data-id]')) return;
+    closeVarPop();
+  });
+  listEl.addEventListener('scroll', () => { if (!$('#varPop').hidden) closeVarPop(); syncMore(); }, { passive: true });
+
+  /* 灯箱：只在当前视图的图片里前后翻 */
+  let lbList = [];
+  let lbAt = 0;
+
+  function openLightbox(item) {
+    const q = state.query.trim().toLowerCase();
+    const pool = state.items.filter((i) => {
+      const g = state.groups.find((x) => x.id === i.group);
+      if (!g || g.kind !== 'image') return false;
+      if (q) return (i.title + ' ' + (i.body || '')).toLowerCase().includes(q);
+      return i.group === state.tab;
+    });
+    lbList = pool.length ? pool : [item];
+    lbAt = Math.max(0, lbList.findIndex((i) => i.id === item.id));
+    showLightbox();
+    $('#lightbox').classList.add('on');
+  }
+  function showLightbox() {
+    const it = lbList[lbAt];
+    if (!it) return;
+    const img = $('#lbImg');
+    const swapping = $('#lightbox').classList.contains('on');
+    img.src = imgSrc(it);
+    $('#lbCap').innerHTML = esc(it.title) +
+      (lbList.length > 1 ? `<span class="cnt">${lbAt + 1} / ${lbList.length}</span>` : '');
+    const multi = lbList.length > 1;
+    $('#lbPrev').hidden = !multi;
+    $('#lbNext').hidden = !multi;
+    /* 翻上一张 / 下一张时图是瞬间换的，补一个很轻的淡入 */
+    if (swapping && !reduceMotion() && img.animate) {
+      img.animate(
+        [{ opacity: .3, transform: 'scale(.99)' }, { opacity: 1, transform: 'none' }],
+        { duration: 190, easing: 'cubic-bezier(.22,.68,.28,1)' }
+      );
+    }
+  }
+  function stepLightbox(d) {
+    if (lbList.length < 2) return;
+    lbAt = (lbAt + d + lbList.length) % lbList.length;
+    showLightbox();
+  }
+  $('#lightbox').onclick = () => $('#lightbox').classList.remove('on');
+  $('#lbImg').onclick = (e) => e.stopPropagation();
+  ['#lbClose', '#lbPrev', '#lbNext'].forEach((sel) => {
+    $(sel).onclick = (e) => {
+      e.stopPropagation();
+      if (sel === '#lbClose') $('#lightbox').classList.remove('on');
+      else stepLightbox(sel === '#lbNext' ? 1 : -1);
+    };
+  });
+
+  /* ── 从剪贴板 / 拖拽 生成条目 ───────────────── */
+  function setMeta(t) {
+    const el = document.getElementById('meta');
+    if (el) el.textContent = t;
+  }
+  function uid() { return 'n' + Date.now().toString(36) + Math.random().toString(16).slice(2, 5); }
+  function stamp() {
+    const d = new Date(), p = (n) => ('0' + n).slice(-2);
+    return p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  const APP_COLORS = ['#2f6f5e', '#2d6cb5', '#c0653f', '#5a5f8a', '#8a6f3e'];
+
+  function targetGroup(kind) {
+    const cur = state.groups.find((g) => g.id === state.tab);
+    if (cur && cur.kind === kind) return cur;
+    const matching = state.groups.find((g) => g.kind === kind);
+    if (matching) return matching;
+    const group = { id: uid(), kind, name: { text: '文字', app: '应用与链接', image: '图片' }[kind] };
+    state.groups.push(group);
+    return group;
+  }
+  function commit(item, kind) {
+    const g = targetGroup(kind);
+    item.group = g.id;
+    state.items.push(item);
+    state.tab = g.id;
+    state.query = '';
+    const s = $('#search'); if (s) s.value = '';
+    save(); render();
+    return g;
+  }
+
+  /* 图片压到 1400px 以内再存，避免把存储撑爆 */
+  function readImage(file) {
+    return new Promise((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 1400;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          if (scale === 1 && img.src.length < 320000) return resolve(img.src);
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          /* PNG/WebP/动图多带透明层，转 JPEG 会把透明压成黑底，改用 WebP */
+          const alpha = /^image\/(png|webp|gif)$/i.test(file.type || '');
+          const out = alpha ? c.toDataURL('image/webp', 0.9) : c.toDataURL('image/jpeg', 0.86);
+          resolve(out.indexOf('data:image') === 0 ? out : c.toDataURL('image/jpeg', 0.86));
+        };
+        img.onerror = () => resolve(fr.result);
+        img.src = fr.result;
+      };
+      fr.onerror = () => resolve('');
+      fr.readAsDataURL(file);
+    });
+  }
+
+  async function addImageFile(file) {
+    await addImageData(await readImage(file), file.name);
+  }
+  /* 桌面版拖进来的是绝对路径，字节由壳读好递过来 */
+  async function addImageData(src, name) {
+    if (!src) { toast('这张图读不出来'); return; }
+    const raw = (name || '').replace(/\.[^.]+$/, '');
+    const title = raw && !/^image\d*$/i.test(raw) ? raw : '图片 ' + stamp();
+    const item = { id: uid(), title, note: '来自剪贴板 · ' + stamp(), body: '' };
+    await attachImage(item, src);
+    commit(item, 'image');
+    toast('已添加图片：' + title);
+  }
+  function addTextItem(text) {
+    const t = String(text).trim();
+    const first = (t.split('\n').find((l) => l.trim()) || '').trim();
+    const title = first.slice(0, 20) || ('文字 ' + stamp());
+    commit({ id: uid(), title, note: '来自剪贴板 · ' + stamp(), body: t }, 'text');
+    toast('已添加文字：' + title);
+  }
+  function webShortcut(value) {
+    const raw = String(value || '').trim();
+    const input = /^www\./i.test(raw) ? 'https://' + raw : raw;
+    if (!/^https?:\/\/[^\s]+$/i.test(input)) return null;
+    try {
+      const url = new URL(input);
+      return url.hostname && !url.username && !url.password ? url : null;
+    } catch { return null; }
+  }
+
+  function addAppPath(target, name) {
+    const link = webShortcut(target);
+    const path = link ? link.href : String(target || '').trim();
+    if (!path) return false;
+    const base = String(name || (link ? link.hostname : path.replace(/[\\/]+$/, '').split(/[\\/]/).pop()) || path);
+    const title = link ? base : base.replace(/\.(exe|lnk|bat|cmd|url)$/i, '');
+    iconCache.delete(path);
+    commit({
+      id: uid(), title, note: path, body: '', app: path,
+      color: APP_COLORS[state.items.length % APP_COLORS.length], mono: link ? '↗' : title.slice(0, 1)
+    }, 'app');
+    toast((link ? '已添加网页：' : '已添加快捷入口：') + title);
+    return true;
+  }
+
+  function textFromTransfer(dt) {
+    const read = (kind) => dt.getData?.(kind) || '';
+    const urls = read('text/uri-list').split(/\r?\n/).filter((line) => line.trim() && !line.startsWith('#'));
+    const plain = read('text/plain');
+    if (urls.length && urls.every(webShortcut)) return { text: urls.join('\n') };
+    if (webShortcut(plain)) return { text: plain };
+    const html = read('text/html');
+    if (html) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const anchors = doc.querySelectorAll('a[href]');
+      if (anchors.length === 1 && doc.body.textContent.trim() === anchors[0].textContent.trim()
+          && (!plain.trim() || plain.trim() === anchors[0].textContent.trim())) {
+        const href = anchors[0].getAttribute('href');
+        if (webShortcut(href)) return { text: href, title: anchors[0].textContent.trim() };
+      }
+    }
+    return { text: plain };
+  }
+
+  async function addShortcutText(text, title, allowText = true) {
+    const value = String(text || '').trim();
+    if (!value) return false;
+    const urls = value.split(/\r?\n/).filter((line) => line.trim()).map(webShortcut);
+    if (urls.length && urls.every(Boolean)) {
+      for (const url of urls) addAppPath(url.href, urls.length === 1 ? title : undefined);
+      return true;
+    }
+    let local = value.replace(/^"(.+)"$/, '$1');
+    if (/^file:\/\//i.test(local)) {
+      try {
+        const file = new URL(local);
+        const path = decodeURIComponent(file.pathname).replace(/\//g, '\\');
+        local = file.hostname ? '\\\\' + file.hostname + path : path.replace(/^\\(?=[a-z]:)/i, '');
+      } catch {}
+    }
+    if (SH.active && /^(?:[a-z]:[\\/]|\\\\)/i.test(local) && !/[\r\n\0]/.test(local)) {
+      const path = await SH.localShortcut(local).catch(() => null);
+      if (path) return addAppPath(path);
+    }
+    if (allowText) { addTextItem(value); return true; }
+    return false;
+  }
+
+  async function ingest(dt, fromClipboard = false, allowText = true) {
+    if (!dt) return false;
+    const files = Array.from(dt.files || []);
+    if (!files.length && dt.items) {
+      const entry = Array.from(dt.items).find((i) => i.kind === 'file' && /^image\//.test(i.type));
+      const f = entry?.getAsFile();
+      if (f) files.push(f);
+    }
+    const transfer = textFromTransfer(dt);
+    const images = files.filter((file) => /^image\//.test(file.type));
+    if (SH.active && fromClipboard && (files.length === 0 || images.length < files.length)) {
+      const paths = await SH.clipboardPaths().catch(() => []);
+      if (paths.length && await addNativePaths(paths)) return true;
+    }
+    if (images.length && allowText) {
+      for (const image of images) await addImageFile(image);
+      return true;
+    }
+    if (transfer.text && await addShortcutText(transfer.text, transfer.title, allowText)) return true;
+    if (files.length && allowText) toast('没拿到真实文件路径，请从资源管理器拖入。');
+    return files.length > 0 && allowText;
+  }
+
+  async function addNativePaths(paths) {
+    let added = false;
+    for (const raw of paths) {
+      const path = await SH.localShortcut(raw).catch(() => null);
+      if (!path) continue;
+      const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
+      const ext = name.match(/\.(png|jpe?g|gif|webp|bmp)$/i)?.[1]?.toLowerCase();
+      if (ext) {
+        try {
+          const b64 = await SH.readFile(path);
+          await addImageData('data:image/' + (/^jpe?g$/.test(ext) ? 'jpeg' : ext) + ';base64,' + b64, name);
+          added = true;
+        } catch { toast('读不了这张图：' + name); }
+      } else {
+        added = addAppPath(path, name) || added;
+      }
+    }
+    return added;
+  }
+
+  document.addEventListener('paste', (e) => {
+    if (drawer.classList.contains('collapsed') || overlayOn() || !e.clipboardData) return;
+    const search = e.target === $('#search');
+    if (!search && e.target.closest?.('input, textarea, [contenteditable]')) return;
+    if (search) {
+      const transfer = textFromTransfer(e.clipboardData);
+      if (!webShortcut(transfer.text) && !e.clipboardData.files.length) return;
+    }
+    e.preventDefault();
+    ingest(e.clipboardData, true, !search).catch(() => toast('无法读取剪贴板内容'));
+  });
+
+  /* 拖文件 / 拖文字进来 → 存为一项 */
+  ['dragenter', 'dragover'].forEach((t) => {
+    drawer.addEventListener(t, (e) => {
+      if (!e.dataTransfer) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      document.body.classList.add('dropping');
+    });
+  });
+  drawer.addEventListener('dragleave', (e) => {
+    if (e.relatedTarget && drawer.contains(e.relatedTarget)) return;
+    document.body.classList.remove('dropping');
+  });
+  drawer.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    document.body.classList.remove('dropping');
+    const ok = await ingest(e.dataTransfer);
+    if (!ok) toast('没识别到可添加的内容');
+  });
+  document.addEventListener('dragend', () => document.body.classList.remove('dropping'));
+  document.addEventListener('drop', () => document.body.classList.remove('dropping'));
+
+  /* ── 开合时序：等动画真的走完，别拿时钟赌 ──────────────────
+     close() 原来写死 320ms、open() 写死 400ms 再校准。WebView 忙一下
+     动画就晚，窗口先缩会把面板裁掉一截（README 坑 1）。
+     现在以抽屉自身尺寸过渡的 transitionend 为准，定时器只兜底：
+     动画被打断、元素被 visibility 藏掉、body.resizing-h 关掉过渡时，
+     那个事件不一定来。
+     贴上边动的是 height，贴侧边动的是 width，两个都要认。 */
+  let settleQ = [];
+  let settleTimer = 0;
+
+  function resetSettle() {
+    clearTimeout(settleTimer);
+    settleQ = [];
+  }
+  function flushSettle() {
+    clearTimeout(settleTimer);
+    if (!settleQ.length) return;
+    const q = settleQ;
+    settleQ = [];
+    for (const fn of q) {
+      try { fn(); } catch (err) { console.error('[desklet] 开合回调出错', err); }
+    }
+  }
+  function onSettled(fn, fallbackMs) {
+    settleQ.push(fn);
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(flushSettle, fallbackMs || 640);
+  }
+  drawer.addEventListener('transitionend', (e) => {
+    if (e.target !== drawer) return;
+    /* box-shadow 会跟着一起过渡，但它不是开合本身，别被它带跑 */
+    if (e.propertyName !== 'height' && e.propertyName !== 'width') return;
+    flushSettle();
+  });
+
+  drawer.addEventListener('animationend', (e) => {
+    if (e.target === drawer && e.animationName === 'desklet-fold') flushSettle();
+  });
+
+  /* 开合动画期间给 body 挂个标记：底边渐变只在此时出现 */
+  function busy() {
+    document.body.classList.add('drawer-busy');
+    clearTimeout(busy._t);
+    /* 兜底：过渡被跳过时收不到 transitionend，别让渐变永久挂在那儿 */
+    busy._t = setTimeout(busyOff, 760);
+  }
+  function busyOff() {
+    clearTimeout(busy._t);
+    document.body.classList.remove('drawer-busy');
+  }
+
+  function open() {
+    clearTimeout(closeTimer);
+    if (drawer.classList.contains('folding')) {
+      resetSettle();
+      drawer.classList.remove('folding');
+      busyOff();
+      scheduleIdleFold();
+    }
+    const wasOpen = !drawer.classList.contains('collapsed');
+    /* handle 和 drawer 都挂了 mouseenter，一次进入会走两遍。
+       已经开着就别再量一遍（fitPanel 会强制同步布局，白拖首帧） */
+    if (wasOpen) {
+      /* 但窗口可能因 DPI 变化或钳制跑偏了，顺手校正一下 */
+      if (SH.active) SH.sync(true);
+      return;
+    }
+    resetSettle();
+    busy();
+    drawer.classList.remove('collapsed');
+    scheduleIdleFold();
+    /* 窗口先撑开，面板再在窗口里长出来（反过来会被窗口边缘裁一截） */
+    if (SH.active) SH.sync(true);
+    fitPanel();
+    /* 展开到位后再校准一次：宽度变了换行也可能变，不校会差一截 */
+    onSettled(() => { busyOff(); fitPanel(); }, 560);
+  }
+
+  function close() {
+    clearTimeout(closeTimer);
+    if (pinned) return;
+    /* 指针离开后先等一小会儿（防误触），240ms 比 300ms 更跟手 */
+    closeTimer = setTimeout(() => {
+      if (SH.dragging || SH.resizing || exporting || drawer.classList.contains('collapsed')) return;
+      resetSettle();
+      busy();
+      drawer.classList.add('collapsed');
+      /* 动画真的结束才缩窗口：面板要缩进 15px 时，得有个完整的盒子可演 */
+      onSettled(() => {
+        busyOff();
+        if (SH.active) { SH.sync(true); setTimeout(() => SH.releaseFocus(), 60); }
+      }, 480);
+    }, 240);
+  }
+
+  /* 手动收起（Esc / 折叠按钮 / 热键）：同一条时序，别各写一套 */
+  function foldUp(opts) {
+    if (SH.resizing || drawer.classList.contains('folding')) return;
+    clearTimeout(idleFoldTimer);
+    const o = opts || {};
+    if (drawer.classList.contains('collapsed')) {
+      if (o.release !== false && SH.active) SH.releaseFocus();
+      return;
+    }
+    resetSettle();
+    busy();
+    const finish = () => {
+      drawer.classList.add('collapsed');
+      drawer.classList.remove('folding');
+      busyOff();
+      if (SH.active) {
+        SH.sync(true);
+        if (o.release !== false) setTimeout(() => SH.releaseFocus(), 60);
+      }
+    };
+    if (SH.active && state.settings.mode === 'float' && drawer.offsetWidth && drawer.offsetHeight) {
+      drawer.style.setProperty('--fold-x', 46 / drawer.offsetWidth);
+      drawer.style.setProperty('--fold-y', 46 / drawer.offsetHeight);
+      drawer.classList.add('folding');
+      onSettled(finish, 440);
+      return;
+    }
+    drawer.classList.add('collapsed');
+    positionBall();
+    onSettled(finish, 480);
+  }
+  /* ── 悬停判定：屏幕顶边正好是浏览器标签栏、最大化按钮、视频控制条 ──
+     零延迟展开会让鼠标扫过顶部就弹一下。加一个停留判定；
+     按着键（拖拽中）不触发；前台是全屏应用时也不触发，热键不受影响。 */
+  let hoverTimer = 0;
+
+  /* 自己维护按键状态，别用 mouseenter 事件上的 e.buttons：
+     那个字段在 mouseenter 里并不可靠（实测会带着上一次的按键状态过来，
+     鼠标明明是松开的也报 1），结果就是「永远不展开」。 */
+  let pressing = false;
+  document.addEventListener('mousedown', () => { pressing = true; }, true);
+  document.addEventListener('mouseup', () => { pressing = false; }, true);
+  window.addEventListener('blur', () => { pressing = false; });
+
+  function hoverDelay() {
+    const v = state.settings.hoverDelay;
+    return Number.isFinite(v) ? Math.max(0, v) : 90;
+  }
+
+  function onHoverEnter() {
+    if (pressing || SH.dragging) return;                     /* 按住鼠标（拖拽/框选）时不弹 */
+    clearTimeout(hoverTimer);
+    /* 已经开着：这是从桌面移回面板，不需要停留判定 */
+    if (!drawer.classList.contains('collapsed')) { open(); return; }
+    /* 全屏检测走 IPC，但和停留判定并行跑，不额外加延迟 */
+    let fs = false;
+    if (SH.active && SH.fullscreen) {
+      SH.fullscreen().then((r) => { fs = !!r; }).catch(() => {});
+    }
+    const wait = hoverDelay();
+    hoverTimer = setTimeout(() => {
+      /* 检测没回来就先放行：偶尔误弹，好过悬停没反应 */
+      if (fs || pressing || SH.dragging) return;
+      open();
+    }, wait || 16);
+  }
+  function onHoverOut() {
+    clearTimeout(hoverTimer);
+  }
+
+  $('#handle').addEventListener('mouseenter', onHoverEnter);
+  $('#handle').addEventListener('mouseleave', onHoverOut);
+  drawer.addEventListener('mouseenter', onHoverEnter);
+
+  /* 搜索框在面板底部，打字时面板高度一变，指针就落到面板外，
+     Chrome 会补一个 mouseleave 把抽屉收走。这种补发的事件没有坐标
+     （clientX/Y 都是 0），真把鼠标移出去时一定带真实坐标。 */
+  function isTyping() {
+    const a = document.activeElement;
+    return !!(a && a !== document.body && drawer.contains(a)
+      && a.matches && a.matches('input, textarea, select, [contenteditable="true"]'));
+  }
+  function overlayOn() {
+    return !!document.querySelector('.modal.on, .lightbox.on');
+  }
+
+  let idleFoldTimer;
+  function scheduleIdleFold() {
+    clearTimeout(idleFoldTimer);
+    const seconds = state.settings.idleFoldSeconds;
+    if (!SH.active || state.settings.mode !== 'float' || !seconds
+        || drawer.classList.contains('collapsed')) return;
+
+    idleFoldTimer = setTimeout(() => {
+      if (drawer.matches(':hover') || pressing || SH.dragging || SH.resizing || exporting || overlayOn()
+          || (isTyping() && document.activeElement !== $('#search'))
+          || document.body.classList.contains('dropping')) {
+        scheduleIdleFold();
+        return;
+      }
+      foldUp({ release: document.hasFocus() });
+    }, seconds * 1000);
+  }
+
+  if (SH.active) {
+    drawer.addEventListener('pointerenter', scheduleIdleFold);
+    drawer.addEventListener('pointerleave', scheduleIdleFold);
+    for (const type of ['keydown', 'focusout', 'pointerup', 'wheel']) {
+      document.addEventListener(type, scheduleIdleFold, { passive: true });
+    }
+    window.addEventListener('blur', scheduleIdleFold);
+  }
+
+  drawer.addEventListener('mouseleave', (e) => {
+    if (SH.dragging || SH.resizing || pressing || pinned || state.settings.mode === 'float' || overlayOn()) return;
+    /* 正在填搜索框 / 变量表单：别因为布局变化把抽屉收走 */
+    if (isTyping()) return;
+    /* 没有坐标 = 面板变矮补发的事件，不是真的移出去 */
+    if (!e.clientX && !e.clientY) return;
+    close();
+  });
+
+  /* 焦点离开抽屉（点外部、Tab 走）：这时才允许收起来 */
+  drawer.addEventListener('focusout', (e) => {
+    /* 焦点只是在抽屉内部换位置（比如从搜索框跳到第一条结果）就别关 */
+    if (e.relatedTarget && drawer.contains(e.relatedTarget)) return;
+    setTimeout(() => {
+      if (SH.dragging || SH.resizing || pressing || pinned || state.settings.mode === 'float' || overlayOn()) return;
+      if (isTyping()) return;
+      if (drawer.matches(':hover')) return;
+      close();
+    }, 100);
+  });
+  $('#handle').addEventListener('click', (e) => {
+    if (e.target.classList.contains('pin')) {
+      pinned = !pinned;
+      drawer.classList.toggle('pinned', pinned);
+      pinned ? open() : close();
+      toast(pinned ? '已固定展开' : '取消固定');
+      return;
+    }
+    drawer.classList.contains('collapsed') ? open() : (pinned = false, drawer.classList.remove('pinned'), close());
+  });
+
+  function clearSearch() {
+    state.query = '';
+    $('#search').value = '';
+    render();
+  }
+
+  /* 方向键在卡片间移动：按屏幕位置找最近的下一项，横排 / 网格 / 列表都适用 */
+  function moveFocus(cur, key) {
+    const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key];
+    if (!dir) return false;
+    const nodes = Array.from(listEl.querySelectorAll('[data-id]')).filter((n) => n !== cur);
+    if (!nodes.length) return false;
+    const cr = cur.getBoundingClientRect();
+    const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
+    let best = null, bestScore = Infinity;
+    nodes.forEach((n) => {
+      const r = n.getBoundingClientRect();
+      const dx = r.left + r.width / 2 - cx;
+      const dy = r.top + r.height / 2 - cy;
+      const proj = dx * dir[0] + dy * dir[1];
+      if (proj <= 6) return;
+      const off = Math.abs(dx * dir[1] - dy * dir[0]);
+      const score = proj + off * 2.4;
+      if (score < bestScore) { bestScore = score; best = n; }
+    });
+    if (!best) return false;
+    best.focus({ preventScroll: true });
+    best.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    return true;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const lbOn = $('#lightbox').classList.contains('on');
+    const popOn = !$('#varPop').hidden;
+    const modalOn = !!document.querySelector('.modal.on');
+    const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+    const inField = tag === 'input' || tag === 'textarea' || tag === 'select' || !!(e.target && e.target.isContentEditable);
+
+    if (!SH.active && (e.ctrlKey || e.metaKey) && e.code === 'Space') {
+      e.preventDefault();
+      closeVarPop();
+      drawer.classList.contains('collapsed') ? open() : close();
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      if (popOn) { closeVarPop(); return; }
+      if (askResolve) { askResolve(false); return; }
+      if (lbOn) { $('#lightbox').classList.remove('on'); return; }
+      if (modalOn) {
+        if (settingsModal.classList.contains('on')) { closeSettings(); return; }
+        document.querySelectorAll('.modal.on').forEach((m) => m.classList.remove('on'));
+        editingId = null;
+        return;
+      }
+      if ($('#search').value) { clearSearch(); return; }
+      if (state.settings.mode === 'float') {
+        if (drawer.classList.contains('collapsed')) { if (SH.active) SH.hide(); return; }
+        foldUp({ release: false });
+      } else if (SH.active && drawer.classList.contains('collapsed')) {
+        /* 已经收成窄条了还按 Esc → 整个藏进托盘 */
+        SH.hide();
+      } else {
+        close();
+      }
+      return;
+    }
+
+    if (lbOn) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        stepLightbox(e.key === 'ArrowRight' ? 1 : -1);
+      }
+      return;
+    }
+    if (modalOn) return;
+
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      open();
+      $('#search').focus();
+      $('#search').select();
+      return;
+    }
+    if (e.key === '/' && !inField) {
+      e.preventDefault();
+      open();
+      $('#search').focus();
+      return;
+    }
+
+    if (inField) {
+      /* 搜索框里回车 → 直接跳到第一条结果 */
+      if (e.key === 'Enter' && e.target === $('#search')) {
+        const first = listEl.querySelector('[data-id]');
+        if (first) { e.preventDefault(); first.focus(); }
+      }
+      return;
+    }
+
+    const cur = document.activeElement && document.activeElement.closest
+      ? document.activeElement.closest('[data-id]') : null;
+    if (cur && listEl.contains(cur) && moveFocus(cur, e.key)) { e.preventDefault(); }
+  });
+
+  $('#search').addEventListener('input', (e) => {
+    state.query = e.target.value;
+    render();
+  });
+
+  /* 添加 / 编辑 */
+  let editingId = null;
+
+  function fillGroupSelect(kind) {
+    const gs = kind ? state.groups.filter((g) => g.kind === kind) : state.groups;
+    const pool = gs.length ? gs : state.groups;
+    $('#mGroup').innerHTML = pool.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+    const want = pool.find((g) => g.id === state.tab) || pool[0];
+    $('#mGroup').value = want ? want.id : '';
+  }
+  function syncModal() {
+    const g = state.groups.find((x) => x.id === $('#mGroup').value) || { kind: 'text' };
+    const t = g.kind;
+    $('#fContent').style.display = t === 'app' || t === 'image' ? 'none' : 'block';
+    $('#fImage').style.display = t === 'image' ? 'block' : 'none';
+    $('#fApp').style.display = t === 'app' ? 'block' : 'none';
+  }
+  function resetModal() {
+    $('#mHead').textContent = '添加一条';
+    $('#mTitle').value = ''; $('#mNote').value = '';
+    $('#mContent').value = ''; $('#mImage').value = ''; $('#mApp').value = '';
+    const prev = $('#mImgPrev');
+    prev.style.display = 'none';
+    prev.removeAttribute('src');
+  }
+
+  function openEditor(item) {
+    const g = state.groups.find((x) => x.id === item.group) || { kind: 'text' };
+    editingId = item.id;
+    resetModal();
+    $('#mHead').textContent = '编辑条目';
+    fillGroupSelect(g.kind);
+    $('#mGroup').value = item.group;
+    $('#mTitle').value = item.title || '';
+    $('#mNote').value = item.note || '';
+    $('#mContent').value = item.body || '';
+    $('#mApp').value = item.app || '';
+    if (g.kind === 'image') {
+      const prev = $('#mImgPrev');
+      prev.src = imgSrc(item);
+      prev.style.display = 'block';
+    }
+    syncModal();
+    $('#modal').classList.add('on');
+    setTimeout(() => { $('#mTitle').focus(); $('#mTitle').select(); }, 40);
+  }
+
+  function openAdd(prefill) {
+    editingId = null;
+    resetModal();
+    const cur = state.groups.find((g) => g.id === state.tab) || state.groups[0];
+    fillGroupSelect(cur ? cur.kind : null);
+    if (cur) $('#mGroup').value = cur.id;
+    if (prefill) $('#mTitle').value = prefill;
+    syncModal();
+    $('#modal').classList.add('on');
+    setTimeout(() => { $('#mTitle').focus(); if (prefill) $('#mTitle').select(); }, 40);
+  }
+
+  $('#addBtn').onclick = () => openAdd('');
+  $('#mGroup').onchange = syncModal;
+  $('#mImage').onchange = () => {
+    const f = $('#mImage').files && $('#mImage').files[0];
+    if (!f || !/^image\//.test(f.type)) return;
+    const prev = $('#mImgPrev');
+    prev.src = URL.createObjectURL(f);
+    prev.style.display = 'block';
+  };
+  $('#mCancel').onclick = () => { editingId = null; $('#modal').classList.remove('on'); };
+  $('#mSave').onclick = async () => {
+    const gid = $('#mGroup').value;
+    const g = state.groups.find((x) => x.id === gid) || { kind: 'text' };
+    const title = $('#mTitle').value.trim();
+    if (!title) { toast('先填个标题'); $('#mTitle').focus(); return; }
+    const note = $('#mNote').value.trim();
+    const wasEdit = !!editingId;
+
+    let item;
+    if (editingId) {
+      item = state.items.find((i) => i.id === editingId);
+      if (!item) { editingId = null; $('#modal').classList.remove('on'); return; }
+    } else {
+      item = { id: uid(), group: gid, title, note, body: '' };
+    }
+    item.group = gid;
+    item.title = title;
+    item.note = note;
+
+    if (g.kind === 'app') {
+      iconCache.delete(item.app);
+      item.app = $('#mApp').value.trim();
+      iconCache.delete(item.app);
+      item.color = item.color || APP_COLORS[state.items.length % APP_COLORS.length];
+      item.mono = item.mono || title.slice(0, 1);
+    } else if (g.kind === 'image') {
+      const f = $('#mImage').files && $('#mImage').files[0];
+      if (f) {
+        const src = await readImage(f);
+        if (!src) { toast('这张图读不出来'); return; }
+        await attachImage(item, src);
+      } else if (!item.src) {
+        item.src = 'assets/placeholder.svg';
+      }
+    } else {
+      item.body = $('#mContent').value;
+    }
+
+    if (!editingId) state.items.push(item);
+    state.tab = gid; state.query = ''; $('#search').value = '';
+    editingId = null;
+    save(); render();
+    $('#modal').classList.remove('on');
+    toast(wasEdit ? '已保存修改' : '已添加');
+  };
+
+  /* 分组管理 */
+  function renderGroupSheet() {
+    $('#gList').innerHTML = state.groups.map((g) => {
+      const n = state.items.filter((i) => i.group === g.id).length;
+      return `<div class="g-row" data-gid="${esc(g.id)}">
+        <span class="g-name">${esc(g.name)}</span>
+        <span class="g-cnt">${n} 项</span>
+        <button class="icon-btn" data-gact="rename" title="改名">✎</button>
+        <button class="icon-btn del" data-gact="del" title="删除">×</button>
+      </div>`;
+    }).join('');
+    $('#gList').querySelectorAll('[data-gact]').forEach((b) => {
+      b.onclick = async () => {
+        const gid = b.closest('[data-gid]').dataset.gid;
+        const g = state.groups.find((x) => x.id === gid);
+        if (!g) return;
+        if (b.dataset.gact === 'rename') {
+          const name = window.prompt('分组改名', g.name);
+          if (name && name.trim()) { g.name = name.trim(); save(); render(); renderGroupSheet(); }
+          return;
+        }
+        if (state.groups.length <= 1) { toast('至少留一个分组'); return; }
+        const n = state.items.filter((i) => i.group === gid).length;
+        if (n) {
+          const ok = await askConfirm({
+            title: '删除分组',
+            text: '「' + g.name + '」里还有 ' + n + ' 项，删分组会连里面内容一起删掉。',
+            ok: '一起删除', danger: true
+          });
+          if (!ok) return;
+        }
+        state.groups = state.groups.filter((x) => x.id !== gid);
+        state.items = state.items.filter((i) => i.group !== gid);
+        if (state.tab === gid) state.tab = state.groups[0].id;
+        save(); render(); renderGroupSheet();
+        toast('分组已删除');
+      };
+    });
+  }
+  function openGroupSheet(focusNew) {
+    renderGroupSheet();
+    $('#gNew').value = '';
+    $('#groupModal').classList.add('on');
+    if (focusNew) setTimeout(() => $('#gNew').focus(), 40);
+  }
+  $('#groupBtn').onclick = () => openGroupSheet(false);
+  $('#gCancel').onclick = () => $('#groupModal').classList.remove('on');
+  $('#gAdd').onclick = () => {
+    const name = $('#gNew').value.trim();
+    if (!name) { toast('给分组起个名'); return; }
+    const g = { id: 'g' + Date.now(), name, kind: 'text' };
+    state.groups.push(g);
+    state.tab = g.id; state.query = ''; $('#search').value = '';
+    $('#gNew').value = '';
+    save(); render(); renderGroupSheet();
+    toast('已新建分组');
+  };
+
+  $('#resetBtn').onclick = async () => {
+    const ok = await askConfirm({
+      title: '恢复示例数据',
+      text: '当前 ' + state.items.length + ' 项会被示例替换，自己加的条目和分组都会消失。要留底的话，先去设置里导出备份。',
+      ok: '替换', danger: true
+    });
+    if (!ok) return;
+    state.items = SEED.slice();
+    state.groups = DEFAULT_GROUPS.slice();
+    state.tab = 'phrase'; state.query = ''; $('#search').value = '';
+    save(); render();
+    $('#settingsModal').classList.remove('on');
+    toast('已恢复示例数据');
+    await assetGC();
+  };
+
+  /* 外观 / 悬浮 */
+  const ball = $('#ball');
+
+  function widthFor(mode) {
+    const s = state.settings;
+    if (mode === 'float') return s.width || 392;
+    if (isSideMode(mode)) return s.sideWidth || 392;
+    return s.dockWidth || 760;
+  }
+  function isHorizontal(w) { return w >= 520; }
+
+  const themeButtons = [...$('#themePicker').querySelectorAll('[data-theme-choice]')];
+  function applyTheme() {
+    const selected = state.settings.theme;
+    document.documentElement.dataset.theme = selected === 'system'
+      ? (systemColors.matches ? 'night' : 'paper') : selected;
+    themeButtons.forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.themeChoice === selected));
+    });
+  }
+  themeButtons.forEach((button) => {
+    button.onclick = () => {
+      if (state.settings.theme === button.dataset.themeChoice) return;
+      state.settings.theme = button.dataset.themeChoice;
+      applyTheme();
+      save();
+    };
+  });
+  systemColors.addEventListener('change', () => {
+    if (state.settings.theme === 'system') applyTheme();
+  });
+
+  function applySettings() {
+    applyTheme();
+    const s = state.settings;
+    const w = SH.active ? Math.min(widthFor(s.mode), Math.max(1, viewW() - 37)) : widthFor(s.mode);
+    document.body.classList.toggle('float', s.mode === 'float');
+    document.body.classList.toggle('dock', s.mode === 'dock' || s.mode === 'bottom');
+    document.body.classList.toggle('side', isSideMode(s.mode));
+    document.body.classList.toggle('edge-bottom', s.mode === 'bottom');
+    document.body.classList.toggle('edge-left', s.mode === 'left');
+    document.body.classList.toggle('topmost', !!s.topmost);
+    document.body.classList.toggle('horizontal', isHorizontal(w));
+    document.body.style.setProperty('--pw', w + 'px');
+    document.body.style.setProperty('--op', (s.opacity / 100).toFixed(2));
+
+    const note = $('#wallNote');
+    if (note) {
+      note.textContent = s.mode === 'float'
+        ? '原型预览 · 拖标题栏移动，点悬浮球展开'
+        : s.mode === 'side'
+          ? '原型预览 · 鼠标移到屏幕右边缘那条窄条上试一下'
+          : '原型预览 · 鼠标移到屏幕上边缘那条窄条上试一下';
+    }
+
+    if (s.mode === 'float') {
+      if (!SH.active) drawer.classList.remove('collapsed');
+      fitPanel();
+      if (SH.active) {
+        /* 位置由窗口负责，DOM 里不再自己摆 */
+        drawer.style.left = '';
+        drawer.style.top = '';
+        drawer.style.width = '';
+      } else {
+        const realH = drawer.getBoundingClientRect().height
+          || (isHorizontal(w) ? 400 : Math.min(640, window.innerHeight - 60));
+        const maxX = Math.max(8, window.innerWidth - s.width - 8);
+        const maxY = Math.max(8, window.innerHeight - realH - 12);
+        if (s.x == null) s.x = Math.max(8, window.innerWidth - s.width - 24);
+        if (s.y == null) s.y = 64;
+        s.x = Math.min(Math.max(8, s.x), maxX);
+        s.y = Math.min(Math.max(8, s.y), maxY);
+        drawer.style.width = '';
+        drawer.style.left = s.x + 'px';
+        drawer.style.top = s.y + 'px';
+        positionBall();
+      }
+    } else {
+      drawer.style.left = '';
+      drawer.style.top = '';
+      drawer.style.width = '';
+    }
+    if (SH.active) SH.topmost(!!s.topmost);
+    fitPanel();
+    if (SH.active) SH.sync(true);
+    scheduleIdleFold();
+  }
+
+  function positionBall() {
+    if (SH.active) return;   /* 壳里球的位置由窗口决定（收起时窗口就是 46×46） */
+    const s = state.settings, b = 46;
+    ball.style.left = Math.min((s.x || 0) + s.width - b, window.innerWidth - b - 8) + 'px';
+    ball.style.top = Math.min((s.y || 0) + 8, window.innerHeight - b - 8) + 'px';
+  }
+
+  /* 面板能到多高：贴边留出一点余量，悬浮窗按窗高算 */
+  /* 装进桌面壳后窗口高度就等于面板高度，再拿 innerHeight 会自我循环（越算越小），
+     所以问壳要屏幕工作区高度 */
+  function viewH() { return SH.active ? SH.h() : window.innerHeight; }
+  function viewW() { return SH.active ? SH.w() : window.innerWidth; }
+  function maxPanelH() {
+    if (SH.active) return Math.max(1, viewH() - (state.settings.mode === 'float' ? 32 : 35));
+    if (state.settings.mode === 'float') return Math.min(640, viewH() - 60);
+    return Math.round(viewH() * 0.72);
+  }
+  function syncSettingsUI() {
+    const s = state.settings;
+    const m = s.mode;
+    const w = widthFor(m);
+    $('#segMode').querySelectorAll('.seg-btn').forEach((b) => {
+      b.classList.toggle('on', b.dataset.mode === m);
+    });
+    $('#setWidth').min = SH.active || m === 'float' || isSideMode(m) ? 320 : 480;
+    $('#setWidth').max = SH.active ? Math.max(1, viewW() - 37) : m === 'float' ? 720 : isSideMode(m) ? 500 : 1200;
+    $('#setWidth').step = SH.active ? 1 : m === 'dock' || m === 'bottom' ? 20 : 8;
+    $('#setWidth').value = w;
+    $('#wVal').textContent = w;
+    const hEl = $('#setHeight'), hMax = maxPanelH(), fixedH = Math.round(s.height || 0);
+    hEl.min = m === 'float' ? 240 : H_MIN; hEl.max = hMax; hEl.step = SH.active ? 1 : 4; hEl.disabled = isSideMode(m);
+    /* 自动时滑块停在当前实际高度，拖起来不会先跳一下 */
+    hEl.value = Math.min(hMax, Math.max(H_MIN, fixedH > 0 ? fixedH : curPanelH() || H_MIN));
+    $('#hVal').textContent = isSideMode(m) ? '贴边满高'
+      : fixedH > 0 ? fixedH + ' px' : '贴合内容';
+    $('#hAuto').hidden = isSideMode(m) || fixedH === 0;
+    $('#setOpacity').value = s.opacity;
+    $('#opVal').textContent = s.opacity;
+    $('#setTop').checked = !!s.topmost;
+    $('#setIdleFold').value = s.idleFoldSeconds;
+    $('#modeTip').textContent = MODE_TIP[m];
+  }
+
+  const settingsModal = $('#settingsModal');
+  const settingsButtons = [...settingsModal.querySelectorAll('[data-settings-page]')];
+  const settingsSections = [...settingsModal.querySelectorAll('[data-settings-section]')];
+  function showSettingsPage(page) {
+    settingsButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.settingsPage === page)));
+    settingsSections.forEach((section) => { section.hidden = section.dataset.settingsSection !== page; });
+    settingsModal.querySelector('.settings-content').scrollTop = 0;
+    if (page === 'data') {
+      $('#storeInfo').textContent = storageInfo() + (assets.fallback ? '（图片走内联存储）' : '');
+    }
+  }
+  settingsButtons.forEach((b) => { b.onclick = () => showSettingsPage(b.dataset.settingsPage); });
+
+  const DEFAULT_SHORTCUT = 'control+alt+Space';
+  const shortcutButton = $('#shShortcut');
+  const shortcutReset = $('#shShortcutReset');
+  const shortcutHint = $('#shShortcutHint');
+  const shortcutHelp = '点击后按下组合键。Esc 取消。';
+  let effectiveShortcut = null;
+  let recordingShortcut = false;
+  let savingShortcut = false;
+  function shortcutLabel(value) {
+    const labels = { control: 'Ctrl', alt: 'Alt', shift: 'Shift', super: 'Win', Space: '空格',
+      ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
+    return value.split('+').map((key) => labels[key] || key.replace(/^(Key|Digit)/, '')).join(' + ');
+  }
+  function updateShortcutUI(message) {
+    shortcutButton.textContent = recordingShortcut ? '请按组合键…'
+      : effectiveShortcut ? shortcutLabel(effectiveShortcut) : '未注册';
+    shortcutButton.setAttribute('aria-pressed', String(recordingShortcut));
+    shortcutButton.disabled = savingShortcut;
+    shortcutReset.disabled = savingShortcut;
+    shortcutHint.textContent = message || shortcutHelp;
+  }
+  async function changeShortcut(value) {
+    recordingShortcut = false;
+    savingShortcut = true;
+    updateShortcutUI('正在检查组合键…');
+    let message = '';
+    try {
+      effectiveShortcut = await SH.setShortcut(value);
+      state.settings.shortcut = effectiveShortcut === DEFAULT_SHORTCUT ? null : effectiveShortcut;
+      message = save() ? '快捷键已生效。' : '已生效，但未能保存到下次启动。';
+    } catch (err) {
+      message = String(err || '无法注册这组快捷键。');
+    } finally {
+      savingShortcut = false;
+      updateShortcutUI(message);
+    }
+  }
+  async function initDesktopSettings() {
+    settingsModal.querySelector('[data-settings-page=desktop]').hidden = false;
+    const auto = $('#shAuto');
+    SH.getAutostart().then((on) => { auto.checked = !!on; }).catch(() => {});
+    auto.onchange = async () => {
+      const previous = !auto.checked;
+      try { auto.checked = !!await SH.autostart(auto.checked); }
+      catch { auto.checked = previous; toast('无法修改开机启动'); }
+    };
+    $('#shQuit').onclick = () => SH.quit().catch(() => toast('退出失败'));
+    savingShortcut = true;
+    updateShortcutUI('正在读取快捷键…');
+    let message = '';
+    try {
+      effectiveShortcut = await SH.getShortcut();
+      if (state.settings.shortcut) {
+        try { effectiveShortcut = await SH.setShortcut(state.settings.shortcut); }
+        catch { message = effectiveShortcut ? '上次设置的快捷键无法注册，已使用默认组合。'
+          : '上次设置的快捷键无法注册，请换一组。'; }
+      } else if (!effectiveShortcut) {
+        message = '默认快捷键可能已被占用，请设置一组新组合。';
+      }
+    } catch {
+      message = '无法读取快捷键。';
+    } finally {
+      savingShortcut = false;
+      updateShortcutUI(message);
+    }
+  }
+  if (SH.active) {
+    shortcutButton.onclick = () => {
+      recordingShortcut = !recordingShortcut;
+      updateShortcutUI(recordingShortcut ? '按 Ctrl、Alt 或 Win，再加一个主键。' : '');
+    };
+    shortcutButton.addEventListener('blur', () => {
+      if (recordingShortcut) { recordingShortcut = false; updateShortcutUI(); }
+    });
+    shortcutButton.addEventListener('keydown', (e) => {
+      if (!recordingShortcut) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat || e.isComposing || /^(Control|Alt|Shift|Meta)(Left|Right)$/.test(e.code)) return;
+      if (e.key === 'Escape' || e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        recordingShortcut = false;
+        updateShortcutUI('已取消。');
+        return;
+      }
+      if (!/^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-9]|2[0-4])|Space|Arrow(?:Left|Right|Up|Down)|Home|End|PageUp|PageDown)$/.test(e.code)
+          || !(e.ctrlKey || e.altKey || e.metaKey)) {
+        updateShortcutUI('请选择 Ctrl、Alt 或 Win，加字母、数字、功能键或方向键等。');
+        return;
+      }
+      const keys = [];
+      if (e.shiftKey) keys.push('shift');
+      if (e.ctrlKey) keys.push('control');
+      if (e.altKey) keys.push('alt');
+      if (e.metaKey) keys.push('super');
+      keys.push(e.code);
+      changeShortcut(keys.join('+'));
+    });
+    shortcutReset.onclick = () => changeShortcut(DEFAULT_SHORTCUT);
+  }
+
+  let settingsOpener = null;
+  function openSettings(opener) {
+    settingsOpener = opener || document.activeElement;
+    syncSettingsUI();
+    $('#storeInfo').textContent = storageInfo() + (assets.fallback ? '（图片走内联存储）' : '');
+    settingsModal.classList.add('on');
+    fitPanel();
+    settingsModal.querySelector('[data-settings-page][aria-pressed=true]').focus({ preventScroll: true });
+  }
+  $('#setBtn').onclick = (event) => openSettings(event.currentTarget);
+  $('#backupBtn').onclick = (event) => {
+    showSettingsPage('data');
+    openSettings(event.currentTarget);
+  };
+
+  /* 任何弹窗关掉后把面板收回去（长表单临时撑开的高度要还回去） */
+  (function watchModals() {
+    let t = 0;
+    const mo = new MutationObserver(() => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        if (!document.querySelector('.modal.on')) fitPanel();
+        scheduleIdleFold();
+      }, 60);
+    });
+    document.querySelectorAll('.modal').forEach((m) => {
+      mo.observe(m, { attributes: true, attributeFilter: ['class'] });
+    });
+  })();
+  function closeSettings() {
+    settingsModal.classList.remove('on');
+    settingsOpener?.focus({ preventScroll: true });
+    settingsOpener = null;
+  }
+  $('#setClose').onclick = closeSettings;
+
+  const MODE_TIP = {
+    dock: '从上边向下展开。拖动把手可换到其他边缘。',
+    bottom: '从下边向上展开。拖动把手可换到其他边缘。',
+    left: '从左边向右展开。拖动把手可换到其他边缘。',
+    side: '从右边向左展开。拖动把手可换到其他边缘。',
+    float: '拖动窗口顶部或收起的小球。靠近屏幕边缘松手即可停靠。'
+  };
+
+  function changeMode(mode, fromDrag) {
+    state.settings.mode = mode;
+    pinned = false;
+    drawer.classList.remove('pinned');
+    if (!fromDrag) drawer.classList.remove('collapsed');
+    resetSettle();
+    drawer.classList.remove('folding');
+    busyOff();
+    noAnim(180);
+    applySettings();
+    syncSettingsUI();
+    save();
+  }
+
+  $('#segMode').querySelectorAll('.seg-btn').forEach((b) => {
+    b.onclick = () => changeMode(b.dataset.mode, false);
+  });
+
+  $('#setWidth').oninput = (e) => {
+    const v = +e.target.value;
+    const m = state.settings.mode;
+    if (m === 'float') state.settings.width = v;
+    else if (isSideMode(m)) state.settings.sideWidth = v;
+    else state.settings.dockWidth = v;
+    $('#wVal').textContent = v;
+    applySettings();
+    save();
+  };
+  /* 拖高度时不走 380ms 过渡，不然面板追不上手 */
+  function noAnim(ms) {
+    document.body.classList.add('resizing-h');
+    clearTimeout(noAnim._t);
+    noAnim._t = setTimeout(() => document.body.classList.remove('resizing-h'), ms);
+  }
+
+  $('#setHeight').oninput = (e) => {
+    const v = Math.round(+e.target.value);
+    state.settings.height = v;
+    $('#hVal').textContent = v + ' px';
+    $('#hAuto').hidden = false;
+    noAnim(200);
+    /* 收着的时候改了也看不见，顺手拉开让人看到结果 */
+    if (drawer.classList.contains('collapsed')) open();
+    else fitPanel();
+    save();
+  };
+
+  $('#hAuto').onclick = () => {
+    state.settings.height = 0;
+    const wasClosed = drawer.classList.contains('collapsed');
+    if (wasClosed) drawer.classList.remove('collapsed');
+    noAnim(220);
+    fitPanel();
+    const h = Math.min(maxPanelH(), Math.max(H_MIN, curPanelH() || H_MIN));
+    $('#setHeight').value = h;
+    $('#hVal').textContent = '贴合内容';
+    $('#hAuto').hidden = true;
+    save();
+  };
+
+  $('#setOpacity').oninput = (e) => {
+    state.settings.opacity = +e.target.value;
+    $('#opVal').textContent = e.target.value;
+    applySettings();
+    save();
+  };
+  $('#setIdleFold').onchange = (e) => {
+    state.settings.idleFoldSeconds = sanitizeIdleFold(Number(e.target.value));
+    scheduleIdleFold();
+    save();
+  };
+
+  $('#setTop').onchange = (e) => {
+    state.settings.topmost = e.target.checked;
+    applySettings();
+    save();
+    toast(e.target.checked ? '已置顶' : '取消置顶');
+  };
+  $('#setResetPos').onclick = () => {
+    state.settings.x = null;
+    state.settings.y = null;
+    applySettings();
+    save();
+    toast('悬浮窗已放回右上角');
+  };
+
+  /* ── 备份：导出 / 导入 ───────────────────────── */
+  function pad2(n) { return ('0' + n).slice(-2); }
+  function stampDate() {
+    const d = new Date();
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
+  }
+  function humanSize(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+  }
+  function storageInfo() {
+    let bytes = 0;
+    try { bytes = (localStorage.getItem(STORE_KEY) || '').length * 2; } catch (e) {}
+    let imgs = 0;
+    state.items.forEach((it) => {
+      if (typeof it.src !== 'string') return;
+      if (it.src.indexOf('idb:') === 0) {
+        imgs++;
+        bytes += (assets.cache.get(it.src.slice(4)) || '').length * 2;
+      } else if (it.src.indexOf('data:') === 0) {
+        imgs++;
+        bytes += it.src.length * 2;
+      }
+    });
+    return state.items.length + ' 项 · 图片 ' + imgs + ' 张 · 约 ' + humanSize(bytes);
+  }
+
+  function buildBackup() {
+    const out = {
+      app: 'desklet', version: 5, exportedAt: new Date().toISOString(),
+      groups: state.groups.map((g) => ({ id: g.id, name: g.name, kind: g.kind })),
+      settings: {
+        mode: state.settings.mode, dockWidth: state.settings.dockWidth,
+        sideWidth: state.settings.sideWidth, width: state.settings.width,
+        opacity: state.settings.opacity, topmost: state.settings.topmost,
+        idleFoldSeconds: state.settings.idleFoldSeconds, theme: state.settings.theme
+      },
+      items: state.items.map((it) => {
+        const o = { id: it.id, group: it.group, title: it.title, note: it.note || '', body: it.body || '' };
+        if (it.app) o.app = it.app;
+        if (it.color) o.color = it.color;
+        if (it.mono) o.mono = it.mono;
+        if (typeof it.src === 'string' && it.src.indexOf('idb:') === 0) {
+          o.srcData = assets.cache.get(it.src.slice(4)) || '';
+        } else if (it.src) {
+          o.src = it.src;
+        }
+        return o;
+      })
+    };
+    return JSON.stringify(out, null, 2);
+  }
+
+  let exporting = false;
+  async function saveJson(filename, makeContents) {
+    if (exporting) return;
+    const status = $('#backupStatus');
+    const report = (message) => {
+      status.textContent = message;
+      status.hidden = !message;
+    };
+    exporting = true;
+    $('#expBtn').disabled = true;
+    report('');
+    try {
+      const contents = await makeContents();
+      if (SH.active) {
+        const path = await SH.saveBackup(filename, contents);
+        if (path === null) {
+          report('已取消保存。');
+          return;
+        }
+        report('已保存到 ' + path);
+        toast('备份已保存');
+      } else {
+        const blob = new Blob([contents], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        report('已交给浏览器下载。');
+      }
+    } catch (err) {
+      const message = '导出失败：' + String(err?.message || err || '未知错误');
+      report(message);
+      toast(message);
+    } finally {
+      exporting = false;
+      $('#expBtn').disabled = false;
+      scheduleIdleFold();
+    }
+  }
+
+  function exportBackup() {
+    return saveJson('desklet-backup-' + stampDate() + '.json', async () => {
+      await assetsReady;
+      return buildBackup();
+    });
+  }
+
+  function cleanItem(r, gidSet) {
+    const it = {
+      id: String(r.id || uid()),
+      group: String(r.group || ''),
+      title: String(r.title || '未命名').slice(0, 120),
+      note: r.note ? String(r.note).slice(0, 200) : '',
+      body: r.body ? String(r.body) : ''
+    };
+    if (!gidSet.has(it.group)) it.group = gidSet.values().next().value;
+    if (r.app) it.app = String(r.app);
+    if (r.color) it.color = String(r.color);
+    if (r.mono) it.mono = String(r.mono).slice(0, 2);
+    return it;
+  }
+
+  async function importBackup(file) {
+    let d;
+    try { d = JSON.parse(await file.text()); }
+    catch (e) { toast('这个文件不是有效的备份'); return; }
+
+    const rawItems = d && Array.isArray(d.items) ? d.items.filter((r) => r && typeof r === 'object') : [];
+    if (!rawItems.length) { toast('备份里没有条目'); return; }
+
+    const srcGroups = (Array.isArray(d.groups) && d.groups.length ? d.groups : DEFAULT_GROUPS)
+      .filter((g) => g && g.id)
+      .map((g) => ({
+        id: String(g.id),
+        name: String(g.name || '分组'),
+        kind: ['text', 'app', 'image'].indexOf(g.kind) >= 0 ? g.kind : 'text'
+      }));
+    const gidSet = new Set(srcGroups.map((g) => g.id));
+
+    const ok = await askConfirm({
+      title: '导入备份',
+      text: '备份里有 ' + rawItems.length + ' 项，会替换当前全部 ' + state.items.length + ' 项。',
+      ok: '覆盖导入', danger: true
+    });
+    if (!ok) return;
+
+    const items = [];
+    for (const r of rawItems) {
+      const it = cleanItem(r, gidSet);
+      const data = typeof r.srcData === 'string' ? r.srcData
+        : (typeof r.src === 'string' && r.src.indexOf('data:') === 0 ? r.src : '');
+      if (data) await attachImage(it, data);
+      else if (typeof r.src === 'string' && r.src) it.src = r.src;
+      items.push(it);
+    }
+    if (!items.length) { toast('备份里的条目都读不出来'); return; }
+
+    state.groups = srcGroups;
+    state.items = items;
+    state.tab = srcGroups[0].id;
+    state.query = '';
+    $('#search').value = '';
+    if (d.settings && typeof d.settings === 'object') {
+      if (THEME_OPTIONS.includes(d.settings.theme)) state.settings.theme = d.settings.theme;
+      if (d.settings.idleFoldSeconds !== undefined) {
+        state.settings.idleFoldSeconds = sanitizeIdleFold(d.settings.idleFoldSeconds);
+      }
+      ['mode', 'dockWidth', 'sideWidth', 'width', 'opacity', 'topmost'].forEach((k) => {
+        if (d.settings[k] !== undefined) state.settings[k] = d.settings[k];
+      });
+    }
+    save(); applySettings(); render();
+    $('#settingsModal').classList.remove('on');
+    toast('已导入 ' + items.length + ' 项');
+    await assetGC();
+  }
+
+  $('#expBtn').onclick = exportBackup;
+  $('#impBtn').onclick = () => $('#importFile').click();
+  $('#importFile').onchange = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    await importBackup(f);
+  };
+
+  $('#foldBtn').onclick = () => {
+    /* 收起了就把焦点还回去，别让悬浮球一直霸着前台 */
+    foldUp();
+  };
+  ball.onclick = open;
+
+  (function enableDrag() {
+    const grabArea = document.querySelector('.winbar');
+    if (SH.active) {
+      const handle = $('#handle');
+      handle.title = '拖到屏幕边缘停靠，拖离边缘变为悬浮窗';
+      ball.title = '单击展开，按住拖动';
+      let pending = null;
+      let suppressClickUntil = 0;
+
+      for (const grip of [grabArea, handle, ball]) {
+        grip.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0 || SH.dragging || e.target.closest('.pin')) return;
+          clearTimeout(hoverTimer);
+          clearTimeout(closeTimer);
+          pending = { id: e.pointerId, x: e.screenX, y: e.screenY };
+          grip.setPointerCapture(e.pointerId);
+        });
+        grip.addEventListener('pointermove', async (e) => {
+          if (!pending || e.pointerId !== pending.id || !(e.buttons & 1)) return;
+          if (Math.hypot(e.screenX - pending.x, e.screenY - pending.y) < 5) return;
+          pending = null;
+          if (grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
+          suppressClickUntil = Infinity;
+          try {
+            const next = await SH.startDrag();
+            if (next) changeMode(next, true);
+            else SH.sync();
+          } finally {
+            pressing = false;
+            scheduleIdleFold();
+            suppressClickUntil = performance.now() + 120;
+          }
+        });
+        const clearPending = () => { pending = null; };
+        grip.addEventListener('pointerup', clearPending);
+        grip.addEventListener('pointercancel', clearPending);
+        grip.addEventListener('lostpointercapture', clearPending);
+        grip.addEventListener('click', (e) => {
+          if (performance.now() >= suppressClickUntil) return;
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }, true);
+      }
+      return;
+    }
+    grabArea.addEventListener('mousedown', (e) => {
+      if (!document.body.classList.contains('float')) return;
+      if (e.target.closest('input, button')) return;
+      const rect = drawer.getBoundingClientRect();
+      const offX = e.clientX - rect.left;
+      const offY = e.clientY - rect.top;
+      const move = (ev) => {
+        const nx = Math.min(Math.max(4, ev.clientX - offX), window.innerWidth - rect.width - 4);
+        const ny = Math.min(Math.max(4, ev.clientY - offY), Math.max(4, window.innerHeight - rect.height - 4));
+        drawer.style.left = nx + 'px';
+        drawer.style.top = ny + 'px';
+        state.settings.x = nx;
+        state.settings.y = ny;
+        positionBall();
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        document.body.style.userSelect = '';
+        save();
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+  })();
+
+  if (SH.active) {
+    const panel = drawer.querySelector('.panel');
+    const clamp = (value, min, max) => Math.min(Math.max(value, Math.min(min, max)), max);
+    const placePanel = async (session) => {
+      if (!session.origin || session.pending || !session.moves) return;
+      const moves = session.moves;
+      session.pending = (async () => {
+        const cursor = await (session.finalCursor || SH.resizeCursor().catch(() => null));
+        if (!cursor) return;
+        const { edge, mode, width, height } = session;
+        const [l, t, r, b, mx, my, mw, mh, scale] = session.origin;
+        const dx = (cursor[0] - l) / scale - session.x;
+        const dy = (cursor[1] - t) / scale - session.y;
+        const east = edge.includes('e'), west = edge.includes('w');
+        const north = edge.includes('n'), south = edge.includes('s');
+        const maxWidth = Math.min(viewW() - 37, width + (east ? mx + mw - r : west ? l - mx : 0) / scale);
+        const maxHeight = Math.min(maxPanelH(), height + (north ? t - my : south ? my + mh - b : 0) / scale);
+        const w = east || west ? clamp(Math.round(width + (east ? dx : -dx)), 320, maxWidth) : width;
+        const h = north || south ? clamp(Math.round(height + (south ? dy : -dy)), mode === 'float' ? 240 : H_MIN, maxHeight) : height;
+        if (w === session.w && h === session.h) return;
+        session.w = w;
+        session.h = h;
+        const dw = w - width, dh = h - height;
+        document.body.style.setProperty('--pw', w + 'px');
+        document.body.classList.toggle('horizontal', isHorizontal(w));
+        if (north || south) drawer.style.setProperty(mode === 'float' ? '--fh' : '--ph', h + 'px');
+        const anchor = mode === 'float'
+          ? [r - 1 + (east ? dw * scale : 0), t - (north ? dh * scale : 0)]
+          : isSideMode(mode) ? null
+            : [(l + r) / 2 + (east ? dw : west ? -dw : 0) * scale / 2, mode === 'bottom' ? b - 1 : t];
+        await SH.resizeTo(anchor);
+      })();
+      try { await session.pending; }
+      finally { session.pending = null; }
+      if (!session.ending && session.moves !== moves) await placePanel(session);
+    };
+
+    for (const edge of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
+      const grip = document.createElement('span');
+      grip.className = 'panel-resize resize-' + edge;
+      grip.setAttribute('aria-hidden', 'true');
+      panel.append(grip);
+      let drag = null;
+      grip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || SH.resizing || SH.dragging || overlayOn()) return;
+        e.preventDefault();
+        clearTimeout(closeTimer);
+        clearTimeout(hoverTimer);
+        resetSettle();
+        busyOff();
+        SH.resizing = true;
+        document.body.classList.add('edge-resizing');
+        const rect = panel.getBoundingClientRect();
+        const session = { edge, mode: state.settings.mode, pointer: e.pointerId,
+          x: e.clientX, y: e.clientY, moves: 0, width: rect.width, height: rect.height,
+          w: rect.width, h: rect.height };
+        drag = session;
+        grip.setPointerCapture(e.pointerId);
+        session.ready = SH.resizeOrigin().then((origin) => { session.origin = origin; }).catch(() => {});
+      });
+      grip.addEventListener('pointermove', (e) => {
+        const session = drag;
+        if (!session || session.pointer !== e.pointerId) return;
+        session.moves++;
+        if (session.frame) return;
+        session.frame = requestAnimationFrame(async () => {
+          session.frame = 0;
+          await session.ready;
+          if (drag === session) await placePanel(session);
+        });
+      });
+      const finish = async (e) => {
+        const session = drag;
+        if (!session || session.pointer !== e.pointerId) return;
+        drag = null;
+        session.ending = true;
+        if (session.moves) session.finalCursor = SH.resizeCursor().catch(() => null);
+        if (session.frame) cancelAnimationFrame(session.frame);
+        await session.ready;
+        if (session.pending) await session.pending;
+        await placePanel(session);
+        const { w, h, width, height, mode } = session;
+        if (w !== width) state.settings[mode === 'float' ? 'width' : isSideMode(mode) ? 'sideWidth' : 'dockWidth'] = w;
+        if (h !== height) state.settings.height = h;
+        SH.resizing = false;
+        pressing = false;
+        document.body.classList.remove('edge-resizing');
+        fitPanel();
+        scheduleIdleFold();
+        if (w !== width || h !== height) {
+          save();
+          SH.savePos();
+        }
+      };
+      grip.addEventListener('pointerup', finish);
+      grip.addEventListener('pointercancel', finish);
+      grip.addEventListener('lostpointercapture', finish);
+    }
+  }
+
+  window.addEventListener('resize', () => {
+    /* 壳里窗口尺寸是我们自己设的，跟着它重算会互相推（窗口↔面板正反馈） */
+    if (SH.active) return;
+    if (state.settings.mode === 'float') applySettings();
+    else fitPanel();
+  });
+
+  /* 任何未捕获的错误都在顶上显示一条，避免出现「一片空白又不知道为什么」 */
+  function downloadRaw(text) {
+    return saveJson('desklet-未读出数据-' + stampDate() + '.json', () => text);
+  }
+  function reportError(text, actLabel, actFn) {
+    const bar = $('#errBar'), t = $('#errText'), act = $('#errAct');
+    if (!bar || !t) return;
+    t.textContent = text;
+    if (act) {
+      if (actLabel && typeof actFn === 'function') {
+        act.hidden = false;
+        act.textContent = actLabel;
+        act.onclick = () => { try { actFn(); } catch (e) {} };
+      } else {
+        act.hidden = true;
+        act.onclick = null;
+      }
+    }
+    bar.hidden = false;
+    requestAnimationFrame(() => bar.classList.add('on'));
+  }
+  window.addEventListener('error', (e) => {
+    if (!e || !e.message) return;
+    reportError('脚本出错：' + e.message + (e.lineno ? '（第 ' + e.lineno + ' 行）' : ''));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason;
+    reportError('异步出错：' + String((r && (r.message || r)) || '未知'));
+  });
+  $('#errClose').onclick = () => {
+    const bar = $('#errBar');
+    bar.classList.remove('on');
+    setTimeout(() => { bar.hidden = true; }, 220);
+  };
+
+  if (boot.salvage) {
+    reportError(
+      '本机数据读不出来，已先用示例数据启动；原始内容已留底，建议先下载保存',
+      '下载原始数据',
+      () => downloadRaw(boot.salvage)
+    );
+  }
+
+  /* 先渲染出来（不依赖存储层），再把图片库接上重绘一次 */
+  applySettings();
+  render();
+  if (boot.fresh) save();
+  /* 原型是网页，一进来就摊开；装成桌面应用时别自己弹出来（开机自启尤其不能弹） */
+  if (!SH.active) setTimeout(open, 700);
+
+  if (SH.active) {
+    /* 桌面版从"收起"开始：开机自启时不能一上来就摊在屏幕顶上。
+       窗口先按收起态量好，用户悬停/按热键才张开 */
+    drawer.classList.add('collapsed');
+    SH.handlers.ready = () => {
+      applySettings();
+      initDesktopSettings();
+    };
+    SH.handlers.summon = () => {
+      if (drawer.classList.contains('collapsed') || drawer.classList.contains('folding')) open();
+      setTimeout(() => { const s = $('#search'); if (s) s.focus(); }, 60);
+    };
+    /* 快捷键 = 翻一下：开着就收，收着就开（要整个藏起来，进托盘菜单或 Esc） */
+    SH.handlers.toggle = () => {
+      if (recordingShortcut || savingShortcut) return;
+      if (drawer.classList.contains('collapsed') || drawer.classList.contains('folding')) {
+        open();
+        setTimeout(() => { const s = $('#search'); if (s) s.focus(); }, 60);
+      } else {
+        pinned = false;
+        drawer.classList.remove('pinned');
+        foldUp();
+      }
+    };
+    SH.handlers.drop = async ({ paths, text }) => {
+      const added = paths?.length && await addNativePaths(paths);
+      if (!added && !await addShortcutText(text)) toast('没拿到可打开的链接或文件路径。');
+    };
+    SH.handlers.files = (paths) => SH.handlers.drop({ paths });
+    SH.boot();
+  }
+
+  /* 启动：开 IndexedDB，把旧版内联 dataURL 的图片搬进去 */
+  const assetsReady = (async function bootUp() {
+    let done = false;
+    const guard = setTimeout(() => { if (!done) assets.fallback = true; }, 2500);
+    assets.db = await idbOpen();
+    if (assets.db) {
+      await assetsLoadAll();
+      let moved = 0;
+      for (const it of state.items) {
+        if (typeof it.src === 'string' && it.src.indexOf('data:image/') === 0) {
+          const id = newAid();
+          if (await assetPut(id, it.src)) { it.src = 'idb:' + id; moved++; }
+        }
+      }
+      if (moved) save();
+      await assetGC();
+    } else {
+      assets.fallback = true;
+    }
+    done = true;
+    clearTimeout(guard);
+    render();
+  })();
+})();
+</script>
+</body>
+</html>
