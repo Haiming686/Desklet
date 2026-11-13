@@ -372,7 +372,20 @@ fn keep_topmost(window: &WebviewWindow) {
     }
     let hwnd = hwnd_of(window);
     if !is_shown(hwnd) || unsafe { IsIconic(hwnd) } != 0 || is_cloaked(hwnd) { return; }
-    if (!is_topmost(hwnd) || covered_by_topmost(hwnd)) && !fullscreen_app() {
+    let fullscreen = fullscreen_app();
+    let hovered_handle = fullscreen && {
+        let (mode, width, height) = state.last_geo.lock().unwrap().clone();
+        let collapsed = match mode.as_str() {
+            "dock" | "bottom" => width == 210.0 && height <= 18.0,
+            "left" | "side" => width == 15.0 && height == 210.0,
+            _ => false,
+        };
+        collapsed && unsafe { GetAsyncKeyState(1) >= 0 && GetAsyncKeyState(2) >= 0 }
+            && resize_cursor().zip(window_rect(hwnd)).is_some_and(|((x, y), rect)| {
+                x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
+            })
+    };
+    if hovered_handle || (!fullscreen && (!is_topmost(hwnd) || covered_by_topmost(hwnd))) {
         apply_topmost(hwnd, true);
     }
 }
@@ -855,7 +868,7 @@ pub fn run() {
                 let _ = w.set_skip_taskbar(true);
                 tauri::async_runtime::spawn(async move {
                     loop {
-                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                         if !w.state::<ShellState>().topmost.load(Ordering::Relaxed) { continue; }
                         let window = w.clone();
                         if w.run_on_main_thread(move || keep_topmost(&window)).is_err() { break; }

@@ -70,9 +70,9 @@
   }
 
   /* 目标几何：窗口该多大、该在哪 */
-  function target() {
+  function target(expanding) {
     var m = mode();
-    var col = isCollapsed();
+    var col = isCollapsed() && !expanding;
     var d = drawer();
     var pw = Math.round(props(body(), '--pw')) || 392;
 
@@ -137,6 +137,14 @@
   }
 
   SHELL.sync = sync;
+  SHELL.prepareDockOpen = async function () {
+    if (!ready || SHELL.dragging || SHELL.resizing) return;
+    var expanded = target(true);
+    await apply(expanded);
+    for (var i = 0; i < 8 && !viewportMatches(expanded); i++) {
+      await new Promise(function (resolve) { setTimeout(resolve, 16); });
+    }
+  };
   SHELL.resizeOrigin = function () { return invoke('resize_origin'); };
   SHELL.resizeCursor = function () { return invoke('resize_cursor'); };
   SHELL.resizeTo = function (anchor) { return apply(target(), anchor); };

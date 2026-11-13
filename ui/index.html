@@ -2380,6 +2380,7 @@
   function openVarPop(item, anchor) {
     const vars = varsOf(item.body);
     if (!vars.length) { closeVarPop(); return; }
+    clearTimeout(closeTimer);
     vpItem = item;
     vpAnchor = anchor || null;
 
@@ -2776,8 +2777,10 @@
     document.body.classList.remove('drawer-busy');
   }
 
-  function open() {
+  let preparingDockOpen = false;
+  async function open() {
     clearTimeout(closeTimer);
+    if (preparingDockOpen) return;
     if (drawer.classList.contains('folding')) {
       resetSettle();
       drawer.classList.remove('folding');
@@ -2791,6 +2794,13 @@
       /* 但窗口可能因 DPI 变化或钳制跑偏了，顺手校正一下 */
       if (SH.active) SH.sync(true);
       return;
+    }
+    if (SH.active && state.settings.mode !== 'float') {
+      const mode = state.settings.mode;
+      preparingDockOpen = true;
+      try { await SH.prepareDockOpen(); }
+      finally { preparingDockOpen = false; }
+      if (state.settings.mode !== mode || SH.dragging || SH.resizing) return;
     }
     resetSettle();
     busy();
@@ -2809,7 +2819,7 @@
     if (pinned) return;
     /* 指针离开后先等一小会儿（防误触），240ms 比 300ms 更跟手 */
     closeTimer = setTimeout(() => {
-      if (SH.dragging || SH.resizing || exporting || tabDrag?.active || drawer.classList.contains('collapsed')) return;
+      if (SH.dragging || SH.resizing || exporting || tabDrag?.active || overlayOn() || drawer.classList.contains('collapsed')) return;
       if (fromPointer && drawer.matches(':hover')) return;
       resetSettle();
       busy();
@@ -2872,28 +2882,28 @@
   }
 
   function onHoverEnter() {
-    if (pressing || SH.dragging) return;                     /* 按住鼠标（拖拽/框选）时不弹 */
-    clearTimeout(hoverTimer);
+    if (pressing || SH.dragging || hoverTimer) return;
     /* 已经开着：这是从桌面移回面板，不需要停留判定 */
     if (!drawer.classList.contains('collapsed')) { open(); return; }
-    /* 全屏检测走 IPC，但和停留判定并行跑，不额外加延迟 */
-    let fs = false;
-    if (SH.active && SH.fullscreen) {
-      SH.fullscreen().then((r) => { fs = !!r; }).catch(() => {});
-    }
     const wait = hoverDelay();
     hoverTimer = setTimeout(() => {
-      /* 检测没回来就先放行：偶尔误弹，好过悬停没反应 */
-      if (fs || pressing || SH.dragging) return;
+      hoverTimer = 0;
+      if (pressing || SH.dragging || !$('#handle').matches(':hover')) return;
       open();
     }, wait || 16);
   }
   function onHoverOut() {
     clearTimeout(hoverTimer);
+    hoverTimer = 0;
   }
 
   $('#handle').addEventListener('mouseenter', onHoverEnter);
   $('#handle').addEventListener('mouseleave', onHoverOut);
+  $('#handle').addEventListener('mousemove', (event) => {
+    if (event.buttons || !drawer.classList.contains('collapsed')) return;
+    pressing = false;
+    onHoverEnter();
+  });
   drawer.addEventListener('mouseenter', onHoverEnter);
 
   /* 搜索框在面板底部，打字时面板高度一变，指针就落到面板外，
@@ -2905,7 +2915,7 @@
       && a.matches && a.matches('input, textarea, select, [contenteditable="true"]'));
   }
   function overlayOn() {
-    return !!document.querySelector('.modal.on, .lightbox.on');
+    return !$('#varPop').hidden || !!document.querySelector('.modal.on, .lightbox.on');
   }
 
   let idleFoldTimer;
