@@ -77,10 +77,11 @@
     var pw = Math.round(props(body(), '--pw')) || 392;
 
     if (m === 'dock' || m === 'bottom') {
+      var handleHeight = props(body(), '--handle-h') || 18;
       var ph = Math.round(num(d && d.style.getPropertyValue('--ph'))) || 384;
       /* 收起时窗口缩到把手那么宽：不挡桌面，也不会被无形区域误触发 */
-      if (col) return { m: m, w: HANDLE_W, h: 15 };
-      return { m: m, w: pw + PAD_D * 2, h: 15 + ph + PAD_B };
+      if (col) return { m: m, w: HANDLE_W, h: handleHeight };
+      return { m: m, w: pw + PAD_D * 2, h: handleHeight + ph + PAD_B };
     }
     if (m === 'side' || m === 'left') {
       if (col) return { m: m, w: 15, h: HANDLE_W };
@@ -96,11 +97,24 @@
   /* last 只是"上一次请求过的几何"，不保证窗口真变成了那么大：
      Windows 在处理 DPI 变化、贴边或钳制时会自己改尺寸。
      所以每次拿实际视口对一下，对不上就照旧尺寸重发，别被缓存永久挡死。 */
+  function viewportMatches(size) {
+    return (!size.w || Math.abs(innerWidth - size.w) <= 1)
+      && (!size.h || Math.abs(innerHeight - size.h) <= 1);
+  }
+
+  async function settleStartupViewport(attempts) {
+    for (var i = 0; i < attempts; i++) {
+      if (SHELL.dragging || SHELL.resizing || drawer().classList.contains('folding')) return;
+      await sync();
+      await new Promise(function (resolve) { setTimeout(resolve, 30); });
+      if (viewportMatches(target())) return;
+    }
+  }
+
   function apply(t, resizeAnchor) {
     var key = { m: t.m, w: Math.round(t.w), h: Math.round(t.h) };
     /* h=0 表示"高度交给工作区"（贴边模式），实际视口会是满屏高，不能拿它比 */
-    var drift = (last.w && Math.abs(Math.round(innerWidth) - last.w) > 2)
-      || (last.h && Math.abs(Math.round(innerHeight) - last.h) > 2);
+    var drift = !viewportMatches(last);
     if (same(key, last) && !drift && !resizeAnchor) return;
     last = key;
     return invoke('apply_geo', { mode: key.m, w: key.w, h: key.h, resizeAnchor: resizeAnchor || null }).then(function () {
@@ -118,6 +132,7 @@
   var ready = false;
   function sync() {
     if (!ready || SHELL.dragging || SHELL.resizing || drawer().classList.contains('folding')) return;
+    if (isCollapsed() && body().matches('.dock.drawer-busy')) return;
     return apply(target());
   }
 
@@ -274,12 +289,14 @@
   SHELL.boot = function () {
     if (booted) return;
     booted = true;
-    startup.then(function () {
+    startup.then(async function () {
+      await invoke('reset_viewport_zoom').catch(function () {});
       if (SHELL.handlers.ready) SHELL.handlers.ready();
       ready = true;
-      return sync();
-    }).then(function () {
-      return invoke('reveal');
+      await settleStartupViewport(7);
+      await invoke('reveal');
+      // Some WebView2 versions deliver the final resize only after the HWND is shown.
+      await settleStartupViewport(4);
     }).catch(function (err) { console.warn('[desklet] 显示窗口失败', err); });
   };
 })();

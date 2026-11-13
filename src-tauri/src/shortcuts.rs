@@ -5,12 +5,12 @@ use tauri::{Emitter, WebviewWindow};
 use windows::{
     core::{implement, w, BOOL, Ref},
     Win32::{
-        Foundation::{HGLOBAL, HWND, LPARAM, POINTL},
+        Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, POINTL},
         System::{
             Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL},
-            DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW},
-            Memory::{GlobalLock, GlobalSize, GlobalUnlock},
-            Ole::{CF_HDROP, CF_UNICODETEXT, IDropTarget, IDropTarget_Impl, DROPEFFECT,
+            DataExchange::{CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW, SetClipboardData},
+            Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE},
+            Ole::{CF_DIBV5, CF_HDROP, CF_UNICODETEXT, IDropTarget, IDropTarget_Impl, DROPEFFECT,
                 DROPEFFECT_COPY, DROPEFFECT_NONE, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop},
             SystemServices::MODIFIERKEYS_FLAGS,
         },
@@ -89,6 +89,79 @@ pub fn clipboard_paths(window: WebviewWindow) -> Vec<String> {
         let _ = CloseClipboard();
         result
     }
+}
+
+pub(crate) fn copy_file(window: &WebviewWindow, path: &std::path::Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    // DROPFILES has five 32-bit fields. The path list is UTF-16 and double-NUL terminated.
+    let mut drop = vec![0; 20];
+    drop[0] = 20;
+    drop[16] = 1;
+    for unit in path.as_os_str().encode_wide().chain([0, 0]) {
+        drop.extend(unit.to_le_bytes());
+    }
+    with_clipboard(window, || unsafe {
+        let effect = RegisterClipboardFormatW(w!("Preferred DropEffect"));
+        if effect != 0 {
+            write_clipboard(effect, &DROPEFFECT_COPY.0.to_le_bytes())?;
+        }
+        write_clipboard(u32::from(CF_HDROP.0), &drop)
+    })
+}
+
+#[tauri::command]
+pub fn copy_bitmap(window: WebviewWindow, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("图片数据无效".into()); };
+    let Some(header) = bytes.get(..8) else { return Err("图片数据无效".into()); };
+    let width = u32::from_le_bytes(header[..4].try_into().unwrap());
+    let height = u32::from_le_bytes(header[4..].try_into().unwrap());
+    let pixels = width.checked_mul(height).filter(|&n| n > 0 && n <= 24_000_000)
+        .ok_or("图片尺寸过大，请使用复制文件或另存为")?;
+    let size = pixels * 4;
+    if bytes.len() != 8 + size as usize { return Err("图片数据无效".into()); }
+
+    // BITMAPV5HEADER followed by top-down BGRA pixels.
+    let mut bitmap = vec![0; 124];
+    for (offset, field) in [
+        (0, 124), (4, width), (8, (-(height as i32)) as u32),
+        (12, (32 << 16) | 1), (16, 3), (20, size),
+        (40, 0x00ff0000), (44, 0x0000ff00), (48, 0x000000ff),
+        (52, 0xff000000), (56, 0x73524742), (108, 4),
+    ] {
+        bitmap[offset..offset+4].copy_from_slice(&field.to_le_bytes());
+    }
+    bitmap.reserve_exact(size as usize);
+    for pixel in bytes[8..].chunks_exact(4) {
+        bitmap.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+    }
+    with_clipboard(&window, || unsafe { write_clipboard(u32::from(CF_DIBV5.0), &bitmap) })
+}
+
+fn with_clipboard(window: &WebviewWindow, write: impl FnOnce() -> windows::core::Result<()>) -> Result<(), String> {
+    unsafe {
+        OpenClipboard(Some(HWND(super::hwnd_of(window) as _)))
+            .map_err(|_| "剪贴板正在使用，请重试")?;
+        let result = EmptyClipboard().and_then(|()| write());
+        let _ = CloseClipboard();
+        result.map_err(|_| "无法写入剪贴板".into())
+    }
+}
+
+unsafe fn write_clipboard(format: u32, bytes: &[u8]) -> windows::core::Result<()> {
+    let memory = GlobalAlloc(GMEM_MOVEABLE, bytes.len())?;
+    let target = GlobalLock(memory).cast::<u8>();
+    if target.is_null() {
+        let error = windows::core::Error::from_thread();
+        let _ = GlobalFree(Some(memory));
+        return Err(error);
+    }
+    ptr::copy_nonoverlapping(bytes.as_ptr(), target, bytes.len());
+    let _ = GlobalUnlock(memory);
+    if let Err(error) = SetClipboardData(format, Some(HANDLE(memory.0))) {
+        let _ = GlobalFree(Some(memory));
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn read_drop(data: &IDataObject) -> Option<DropPayload> {

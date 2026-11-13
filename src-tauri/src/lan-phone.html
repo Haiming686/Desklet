@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">
+<title>Desklet 临时互传</title>
+<style>
+*{box-sizing:border-box}
+body{margin:auto;max-width:640px;height:100vh;height:100dvh;display:flex;flex-direction:column;background:#eef5f0;color:#19362b;font:15px system-ui,sans-serif}
+header{flex:none;padding:12px 16px;background:#fff;border-bottom:1px solid #dce8df}
+h1{margin:0;font-size:20px}p{margin:6px 0 0;line-height:1.45}
+#status{color:#25654e;font-size:13px}small{color:#4d6659}
+#transfer{display:flex;flex-direction:column;flex:1;min-height:0}
+#inbox{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:12px;padding:14px}
+.empty{margin:auto;color:#4d6659;text-align:center}
+.row{align-self:flex-start;max-width:88%;min-width:0;overflow-wrap:anywhere}
+.row.mine{align-self:flex-end}
+.bubble{position:relative;background:#fff;border:1px solid #dce8df;padding:10px 12px;border-radius:4px 14px 14px}
+.bubble.has-menu{padding-right:38px}
+.mine .bubble{background:#d9efdf;border-color:#c6e2ce;border-radius:14px 4px 14px 14px}
+.bubble img{display:block;max-width:100%;max-height:260px;object-fit:contain;border-radius:8px}
+.file-card{display:flex;align-items:center;gap:8px}
+.file-card strong{display:block}
+.file-icon{font-size:22px;color:#25654e}
+.excerpt{margin-top:7px;padding-top:7px;border-top:1px solid #c6e2ce;max-height:4.2em;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+.controls{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:200px;overflow:auto;margin:0}
+.message-link{padding:0;background:none;color:#25654e;text-decoration:underline;overflow-wrap:anywhere;text-align:left}
+.menu summary{position:absolute;right:5px;top:5px;width:28px;line-height:28px;text-align:center;cursor:pointer;list-style:none;border-radius:6px;color:#4d6659}
+.menu summary::-webkit-details-marker{display:none}
+.menu summary:hover,.menu[open] summary{background:#c6e2ce}
+footer{flex:none;padding:8px 10px max(8px,env(safe-area-inset-bottom));background:#fff;border-top:1px solid #dce8df}
+.composer{display:flex;align-items:flex-end;gap:6px}
+textarea{font:inherit;min-width:0;flex:1;resize:none;padding:8px;border:1px solid #adccba;border-radius:10px}
+button,a{font:inherit;padding:8px 10px;border:0;border-radius:8px;background:#dff0e5;color:#214b3a;text-decoration:none;cursor:pointer}
+#sendText{background:#25654e;color:#fff}button:disabled{opacity:.55}
+.controls button,.controls a,#draft button{padding:5px 7px;font-size:12px}
+#draft{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px}
+#draft button{max-width:100%;overflow-wrap:anywhere}
+[hidden]{display:none!important}
+</style>
+<header>
+ <h1>Desklet 临时互传</h1>
+ <p id="status" role="status">正在连接…</p>
+ <p id="notice"><small>请在可信局域网使用，传输不加密。</small></p>
+</header>
+<main id="transfer" hidden>
+ <div id="inbox" role="log" aria-label="与电脑的对话" tabindex="0"></div>
+ <footer>
+  <div id="draft" aria-label="待发送附件"></div>
+  <div class="composer">
+   <input id="file" type="file" multiple hidden>
+   <button id="attach" type="button">附件</button>
+   <textarea id="text" rows="2" placeholder="输入消息或粘贴图片" aria-label="发送消息"></textarea>
+   <button id="sendText" type="button">发送</button>
+  </div>
+ </footer>
+</main>
+<script src="/phone.js" defer></script>
+</html>

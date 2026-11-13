@@ -1,6 +1,6 @@
 [package]
 name = "desklet"
-version = "0.1.0"
+version = "0.2.6"
 description = "Desklet — 桌面话术抽屉"
 edition = "2021"
 license = "MIT"
@@ -23,6 +23,13 @@ serde_json = "1"
 windows = { version = "0.62", features = ["Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_System_SystemServices", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 windows-core = "0.62"
 windows-sys = { version = "0.61", features = ["Win32_UI_Controls_Dialogs"] }
+
+axum = "0.8"
+if-addrs = "0.13"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+tokio = { version = "1", features = ["net", "time", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
 
 [profile.release]
 codegen-units = 1

@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="shell.css">
 <style>
   :root {
+    --handle-h: 18px;
     --panel: #fbfaf7;
     --card: #ffffff;
     --ink: #1b1b19;
@@ -119,7 +120,7 @@
     transform: translateX(-50%);
     width: var(--pw, 392px);
     max-width: calc(100vw - 24px);
-    height: 15px; overflow: hidden;
+    height: var(--handle-h); overflow: hidden;
     display: flex; flex-direction: column;
     z-index: 20;
     --ph: min(620px, 72vh);
@@ -132,12 +133,12 @@
                 box-shadow var(--t-4) var(--e-drawer-out);
   }
   .drawer:not(.collapsed) {
-    height: calc(15px + var(--ph));
+    height: calc(var(--handle-h) + var(--ph));
     border-radius: 0 0 var(--r-lg) var(--r-lg);
     box-shadow: 0 14px 40px rgba(28,28,25,.16);
   }
   .handle {
-    flex: 0 0 15px; width: 210px; margin: 0 auto; height: 15px; cursor: pointer;
+    flex: 0 0 var(--handle-h); width: 210px; margin: 0 auto; height: var(--handle-h); cursor: pointer;
     display: flex; align-items: center; justify-content: center; gap: 7px;
     background: var(--handle-bg);
     border: 1px solid var(--handle-edge); border-top: 0;
@@ -147,10 +148,6 @@
   }
   .handle:hover { background: var(--handle-bg-hover); }
   .handle .grip { width: 26px; height: 3px; border-radius: 2px; background: var(--grip); }
-  .handle .vtext {
-    font-size: 10.5px; letter-spacing: 2px;
-    color: var(--ink-3); user-select: none;
-  }
   .handle .pin {
     width: 8px; height: 8px; border-radius: 50%;
     border: 1px solid var(--grip); background: transparent;
@@ -212,6 +209,11 @@
     overflow-x: auto; scrollbar-width: none;
   }
   .tabs::-webkit-scrollbar { display: none; }
+  .tabs .tab { user-select: none; }
+  body.reordering-tabs .tabs, body.reordering-tabs .tab { cursor: grabbing; }
+  .tab-reorder-source { opacity: .48; }
+  .tab-insert-before { box-shadow: inset 3px 0 var(--accent); }
+  .tab-insert-after { box-shadow: inset -3px 0 var(--accent); }
   .tab {
     flex: 0 0 auto;
     height: 27px; padding: 0 11px; border-radius: 999px;
@@ -229,8 +231,18 @@
 
   /* body */
   .p-body {
-    flex: 1; overflow-y: auto; padding: 12px 14px 6px;
-    scrollbar-width: thin;
+    flex: 1; min-height: 0; overflow: hidden auto; padding: 12px 14px 6px;
+    scrollbar-width: thin; scrollbar-color: var(--line-2) transparent;
+    --card-gap: 10px;
+    --tile-min: 108px;
+    --thumb-min: 172px;
+    --tile-icon: 38px;
+  }
+  body[data-density=compact] .p-body {
+    --card-gap: 6px;
+    --tile-min: 88px;
+    --thumb-min: 140px;
+    --tile-icon: 32px;
   }
   .p-body::-webkit-scrollbar { width: 8px; }
   .p-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; border: 2px solid var(--panel); }
@@ -255,6 +267,7 @@
   }
   .card:hover { border-color: var(--line-2); box-shadow: 0 4px 12px rgba(30,30,25,.07); transform: translateY(-1px); }
   .card:active { transform: translateY(0) scale(.988); transition-duration: .08s; }
+  body[data-density=compact] .card { padding: 8px 9px; margin-bottom: 6px; }
   .card .c-top { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
   .card .c-title {
     font-size: 12.5px; font-weight: 600; letter-spacing: .1px; flex: 1; min-width: 0;
@@ -333,9 +346,9 @@
   }
 
   /* app tiles */
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tile-min)), 1fr)); gap: var(--card-gap); }
   .tile {
-    position: relative;
+    position: relative; min-width: 0;
     display: flex; flex-direction: column; align-items: center; gap: 7px;
     padding: 12px 6px 10px;
     background: var(--card); border: 1px solid var(--line);
@@ -344,8 +357,9 @@
   }
   .tile:hover { border-color: var(--line-2); box-shadow: 0 4px 12px rgba(30,30,25,.07); transform: translateY(-1px); }
   .tile:active { transform: translateY(0) scale(.98); }
+  body[data-density=compact] .tile { gap: 4px; padding: 8px 5px 6px; }
   .tile .sq {
-    width: 38px; height: 38px; border-radius: 10px;
+    width: var(--tile-icon); height: var(--tile-icon); border-radius: 10px;
     display: grid; place-items: center;
     font-size: 15px; font-weight: 500; color: #fff;
   }
@@ -356,14 +370,16 @@
     filter: drop-shadow(0 1px 1px rgba(30,30,25,.18));
   }
   .tile .nm {
-    font-size: 11.5px; color: var(--ink-2); max-width: 100%;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    width: 100%; min-height: 2.7em; text-align: center;
+    font-size: 11.5px; line-height: 1.35; color: var(--ink-2);
+    overflow: hidden; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   }
   .tile .c-acts { top: 2px; right: 2px; padding-left: 8px; background: var(--card); }
   @media (hover: none) { .c-acts { opacity: 1; } }
 
   /* image thumbs */
-  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--thumb-min)), 1fr)); gap: var(--card-gap); }
   .thumb {
     position: relative; border-radius: var(--r-md); overflow: hidden;
     border: 1px solid var(--line); background: var(--sunken); cursor: zoom-in;
@@ -374,6 +390,7 @@
     transition: transform var(--t-3) var(--e-out);
   }
   .thumb:hover img { transform: scale(1.025); }
+  .thumb img:not([src]) { visibility: hidden; }
   .thumb .cap {
     position: absolute; left: 0; right: 0; bottom: 0;
     padding: 14px 8px 6px; font-size: 10.5px; color: #fff;
@@ -525,57 +542,22 @@
   .vp-tip { flex: 1; min-width: 0; font-size: 10px; color: var(--ink-3); }
   .vp-foot .btn { height: 26px; padding: 0 10px; font-size: 11.5px; }
 
-  /* 横向排布（面板够宽时自动切换） */
-  body.horizontal .drawer, body.dock .drawer { --ph: 384px; }
-  body.horizontal .p-body {
-    display: flex; flex-direction: row; align-items: flex-start;
-    gap: 8px;
-    overflow-x: auto; overflow-y: hidden;
-    padding: 10px 14px 12px;
-  }
-  body.horizontal .p-body > .card {
-    flex: 0 0 236px; margin-bottom: 0;
-    min-height: 104px; max-height: 196px; overflow: hidden;
-  }
+  /* 宽面板增加列数，窄面板减少列数，列表统一纵向滚动。 */
+  body.dock .drawer { --ph: 384px; }
   body.horizontal .p-body > .card .c-body { -webkit-line-clamp: 4; }
-  /* 应用 / 图片：拆掉内部网格容器，让每个方块直接成为横排里的一项（否则仍会按列换行） */
-  body.horizontal .p-body > .tiles,
-  body.horizontal .p-body > .thumbs { display: contents; }
-  body.horizontal .p-body > .tiles > .tile {
-    flex: 0 0 96px; margin-bottom: 0;
-    padding: 14px 6px 12px;
-  }
-  body.horizontal .p-body > .tiles > .tile .sq { width: 42px; height: 42px; font-size: 16px; }
-  body.horizontal .p-body > .thumbs > .thumb { flex: 0 0 196px; }
-  body.horizontal .p-body > .group-label { display: none; }
-  body.horizontal .p-body > .empty { flex: 1 1 auto; padding: 28px 16px; }
-  body.horizontal .p-body::-webkit-scrollbar { height: 8px; }
-  body.float.horizontal .panel { height: var(--fh, 400px); }
-
-  /* 贴上边：宽面板按多列铺排，纵向滚动（横着一条越用越长，找东西要左右拉） */
-  body.dock.horizontal:not(.searching) .p-body {
+  body.horizontal:not(.searching) .p-body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 8px;
+    gap: var(--card-gap);
     align-content: start;
     /* 行高按内容，别让容器变高时把行拉开：
        否则量出来的"内容高度"会跟着面板高度一起涨，自动高度越算越高 */
     grid-auto-rows: max-content;
-    overflow-x: hidden; overflow-y: auto;
     padding: 10px 14px 12px;
   }
-  body.dock.horizontal .p-body > .card { flex: none; margin-bottom: 0; }
-  /* 应用 / 图片交回自身网格，保住原来的密度（应用一行 5~6 个、图片 3~4 张） */
-  body.dock.horizontal .p-body > .tiles,
-  body.dock.horizontal .p-body > .thumbs {
-    display: grid; grid-column: 1 / -1; gap: 8px;
-  }
-  body.dock.horizontal .p-body > .tiles { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
-  body.dock.horizontal .p-body > .thumbs { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
-  body.dock.horizontal .p-body > .tiles > .tile { flex: none; padding: 12px 6px 10px; }
-  body.dock.horizontal .p-body > .tiles > .tile .sq { width: 38px; height: 38px; font-size: 15px; }
-  body.dock.horizontal .p-body > .thumbs > .thumb { flex: none; }
-  body.dock.horizontal .p-body > .empty { grid-column: 1 / -1; padding: 30px 16px; }
+  body.horizontal .p-body > .card { min-width: 0; margin-bottom: 0; }
+  body.horizontal .p-body > :is(.tiles, .thumbs, .group-label, .empty) { grid-column: 1 / -1; }
+  body.horizontal .p-body > .empty { padding: 30px 16px; }
   /* 内容没滚到底时，底栏上方压一层淡出，提示下面还有东西 */
   body.dock .p-dock { position: relative; }
   body.dock .p-dock::before {
@@ -589,7 +571,8 @@
      跟着高度一起走，动画结束就撤掉，不影响底栏 */
   body.dock .drawer::after {
     content: ''; position: absolute; left: 1px; right: 1px; bottom: 1px;
-    height: 30px; pointer-events: none; z-index: 4;
+    height: clamp(0px, calc(100% - var(--handle-h) - 1px), 30px);
+    pointer-events: none; z-index: 4;
     border-radius: 0 0 var(--r-lg) var(--r-lg);
     background: linear-gradient(transparent, var(--panel));
     opacity: 0; transition: opacity var(--t-1) var(--e-out);
@@ -687,7 +670,6 @@
     border: 1px solid var(--handle-edge); border-right: 0;
   }
   body.side .handle .grip { width: 3px; height: 26px; }
-  body.side .handle .vtext { writing-mode: vertical-rl; letter-spacing: 3px; }
   body.side .panel {
     width: var(--pw, 392px); flex: 0 0 var(--pw, 392px);
     height: calc(100% - 20px);
@@ -866,6 +848,7 @@
   .settings-card .field > label { color: var(--ink-2); font-size: 12px; }
   .settings-mode { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .settings-mode .seg-btn { min-width: 0; padding-inline: 4px; }
+  .density-picker .seg-btn[aria-pressed=true] { color: var(--accent); border-color: var(--accent); background: var(--tint); }
   .settings-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .settings-key { flex: 1; justify-content: center; text-align: center; min-width: 116px; }
   .settings-key[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
@@ -993,6 +976,38 @@
   .btn:disabled { cursor: default; opacity: .55; }
   .settings-card, .panel, .p-dock { transition-property: background-color, border-color; transition-duration: var(--t-1); }
   .panel { transition-property: opacity, height, background-color, border-color; transition-duration: var(--t-1), var(--t-drawer), var(--t-1), var(--t-1); }
+  .lan-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:7px 0}
+  .lan-note,#lanMessage{font-size:12px;color:var(--ink-2);line-height:1.5}
+  #lanModal textarea,#lanUrl,#lanModal select{box-sizing:border-box;max-width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line-2);border-radius:7px;padding:6px}
+  #lanText,#lanUrl{width:100%}
+  #lanQr{display:block;width:162px;height:162px;margin:8px auto;background:white;padding:5px}
+  #lanState{color:var(--accent);font-size:12px;margin-right:auto}
+  #lanItems{display:flex;flex-direction:column;gap:10px;height:clamp(104px,36vh,276px);overflow:auto;overscroll-behavior:contain;padding:10px;background:var(--accent-soft);border-radius:12px}
+  .lan-empty{margin:auto;color:var(--ink-2);text-align:center;font-size:12px}
+  .lan-item{align-self:flex-start;max-width:88%;min-width:0;overflow-wrap:anywhere}
+  .lan-item.lan-mine{align-self:flex-end}
+  .lan-bubble{position:relative;padding:8px 35px 8px 10px;background:var(--card);border:1px solid var(--line-2);border-radius:3px 12px 12px}
+  .lan-mine .lan-bubble{border-color:var(--accent);border-radius:12px 3px 12px 12px}
+  .lan-bubble pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0;max-height:140px;overflow:auto}
+  .lan-bubble img{display:block;max-width:100%;max-height:190px;border-radius:7px;object-fit:contain}
+  .lan-file{display:flex;align-items:center;gap:7px}
+  .lan-file strong{display:block}
+  .lan-file small{color:var(--ink-2)}
+  .lan-file-icon{font-size:20px;color:var(--accent)}
+  .lan-bubble .lan-excerpt{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);max-height:4.2em;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+  .lan-link{border:0;padding:0;background:none;color:var(--accent);text-align:left;text-decoration:underline;overflow-wrap:anywhere;font:inherit;cursor:pointer}
+  .lan-menu summary{position:absolute;right:5px;top:4px;width:25px;line-height:25px;text-align:center;cursor:pointer;list-style:none;border-radius:6px;color:var(--ink-2)}
+  .lan-menu summary::-webkit-details-marker{display:none}
+  .lan-menu summary:hover,.lan-menu[open] summary{background:var(--accent-soft)}
+  .lan-bubble .lan-actions{margin:5px 0 0}
+  .lan-bubble .btn{font-size:10px;padding:3px 6px}
+  .lan-composer{display:flex;gap:6px;align-items:flex-end;margin-top:8px}
+  .lan-composer textarea{flex:1;min-width:0;resize:none}
+  #lanDraft{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+  #lanDraft button{max-width:100%;overflow-wrap:anywhere}
+  #lanModal [hidden],#lanBtn[hidden]{display:none!important}
+  #lanBtn.lan-active::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+
 </style>
 </head>
 <body>
@@ -1021,7 +1036,6 @@
   <aside class="drawer collapsed" id="drawer">
     <div class="handle" id="handle">
       <div class="grip"></div>
-      <div class="vtext">常用</div>
       <div class="pin" title="固定展开"></div>
     </div>
 
@@ -1053,7 +1067,7 @@
           <button class="btn primary" id="addBtn">+ 添加</button>
           <button class="btn" id="groupBtn">分组</button>
           <button type="button" class="btn" id="backupBtn">备份</button>
-          <span class="foot-note" id="footNote">本地保存</span>
+          <button type="button" class="btn" id="lanBtn" hidden>互传</button><span class="foot-note" id="footNote">本地保存</span>
         </div>
       </div>
     </div>
@@ -1133,9 +1147,16 @@
         <div class="settings-card">
           <h4>面板外观</h4>
           <div class="field">
+            <label id="densityLabel">卡片密度</label>
+            <div class="seg density-picker" role="group" aria-labelledby="densityLabel">
+              <button type="button" class="seg-btn" data-density-choice="compact" aria-pressed="false">紧凑</button>
+              <button type="button" class="seg-btn" data-density-choice="comfortable" aria-pressed="false">舒展</button>
+            </div>
+          </div>
+          <div class="field">
             <label for="setWidth">宽度 · <span id="wVal">760</span> px</label>
             <input type="range" id="setWidth" min="480" max="1200" step="20">
-            <div class="tip">宽度达到 520 px 后使用横向布局。</div>
+            <div class="tip">窗口加宽后，卡片会自动增加列数。</div>
           </div>
           <div class="field">
             <label for="setHeight">高度 · <span id="hVal">贴合内容</span></label>
@@ -1210,9 +1231,37 @@
   </div>
 </div>
 
+<div class="modal" id="lanModal" role="dialog" aria-labelledby="lanTitle">
+  <div class="sheet settings-sheet">
+    <header class="settings-head"><div class="settings-title"><h3 id="lanTitle">临时互传</h3><button type="button" class="btn" id="lanClose">关闭</button></div></header>
+    <div class="settings-content">
+      <p class="lan-note" id="lanNotice">请在可信局域网使用，传输不加密。</p>
+      <section id="lanSetup"><label for="lanIp">电脑局域网地址</label><div class="lan-actions"><select id="lanIp"></select><button type="button" class="btn primary" id="lanStart">开启互传</button></div></section>
+      <section id="lanRoom" hidden>
+        <div class="lan-actions"><strong id="lanState"></strong><button type="button" class="btn" id="lanStop">断开并清空</button></div>
+        <div id="lanInvite"><p>手机连到同一个局域网，扫码或复制完整地址到手机浏览器。</p><img id="lanQr" alt="互传二维码"><input id="lanUrl" readonly aria-label="完整配对地址" onclick="this.select()"></div>
+        <div id="lanPair" hidden><p id="lanPairAddress"></p><div class="lan-actions"><button type="button" class="btn primary" id="lanAccept">允许连接</button><button type="button" class="btn" id="lanReject">拒绝</button></div></div>
+        <div id="lanSend" hidden>
+          <div id="lanItems" role="log" aria-label="与手机的对话" tabindex="0"></div>
+          <div id="lanDraft" aria-label="待发送附件"></div>
+          <div class="lan-composer">
+            <input type="file" id="lanFile" multiple hidden>
+            <button type="button" class="btn" id="lanAttach">附件</button>
+            <textarea id="lanText" rows="2" placeholder="输入消息，或粘贴图片 / 文件" aria-label="发送消息"></textarea>
+            <button type="button" class="btn primary" id="lanSendText">发送</button>
+          </div>
+          <details class="lan-note"><summary>从 Desklet 选取</summary><div class="lan-actions"><select id="lanExisting" aria-label="从 Desklet 选择"></select><button type="button" class="btn" id="lanSendExisting">发送选中项</button></div></details>
+        </div>
+      </section>
+      <p id="lanMessage" role="status"></p>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="groupModal">
   <div class="sheet">
     <h3>管理分组</h3>
+    <p class="tip" style="font-size:11px;color:var(--ink-3)">用箭头调整顺序，也可以在主面板长按分组标签拖动。</p>
     <div id="gList"></div>
     <div class="field" style="margin-top:14px">
       <label>新建分组</label>
@@ -1321,17 +1370,19 @@
   const systemColors = matchMedia('(prefers-color-scheme: dark)');
   const DEFAULT_SETTINGS = {
     theme: 'system',
+    density: 'comfortable',
     idleFoldSeconds: 30,
     shortcut: null,
     mode: 'dock', width: 392, dockWidth: 760, sideWidth: 392,
     opacity: 100, topmost: true, x: null, y: null,
     height: 0,          /* 0 = 贴合内容，>0 = 锁定高度（px） */
-    hoverDelay: 90,     /* 鼠标在把手上停多久才展开；0 = 立即。屏幕顶边常被标签栏/播放条占用 */
+    hoverDelay: 65,     /* 鼠标在把手上停多久才展开；0 = 立即。屏幕顶边常被标签栏/播放条占用 */
   };
 
   /* ── 图片存 IndexedDB，localStorage 只留文字（避开 5MB 上限） ── */
   const DB_NAME = 'desklet.assets', DB_VER = 1, STORE_A = 'blobs';
-  const assets = { db: null, cache: new Map(), loaded: false, fallback: false };
+  const assets = { db: null, cache: new Map(), cachedSize: 0, fallback: false };
+  const ASSET_CACHE_LIMIT = 12 * 1024 * 1024; // UTF-16 units, at most about 24 MiB
 
   function idbOpen() {
     return new Promise((resolve) => {
@@ -1363,20 +1414,29 @@
     });
   }
 
-  function assetsLoadAll() {
-    if (!assets.db) return Promise.resolve();
-    return new Promise((resolve) => {
-      let tx;
-      try { tx = assets.db.transaction(STORE_A, 'readonly'); }
-      catch (e) { return resolve(); }
-      const req = tx.objectStore(STORE_A).openCursor();
-      req.onsuccess = () => {
-        const cur = req.result;
-        if (cur) { assets.cache.set(String(cur.key), String(cur.value)); cur.continue(); }
-      };
-      tx.oncomplete = () => { assets.loaded = true; resolve(); };
-      tx.onerror = () => resolve();
-    });
+  function forgetAsset(id) {
+    const data = assets.cache.get(id);
+    if (!data) return;
+    assets.cachedSize -= data.length;
+    assets.cache.delete(id);
+  }
+
+  function rememberAsset(id, data) {
+    forgetAsset(id);
+    if (!data || data.length > ASSET_CACHE_LIMIT) return;
+    while (assets.cache.size >= 32 || assets.cachedSize + data.length > ASSET_CACHE_LIMIT) {
+      forgetAsset(assets.cache.keys().next().value);
+    }
+    assets.cache.set(id, data);
+    assets.cachedSize += data.length;
+  }
+
+  async function assetRead(id) {
+    await assetsReady;
+    const data = assets.cache.get(id) || await idbRun('readonly', s => s.get(id));
+    if (typeof data !== 'string' || !data) throw Error('找不到图片数据');
+    rememberAsset(id, data);
+    return data;
   }
 
   function newAid() { return 'a' + Date.now().toString(36) + Math.random().toString(16).slice(2, 7); }
@@ -1385,24 +1445,25 @@
     if (!assets.db) return false;
     try { await idbRun('readwrite', (s) => s.put(dataUrl, id)); }
     catch (e) { assets.fallback = true; return false; }
-    assets.cache.set(id, dataUrl);
+    rememberAsset(id, dataUrl);
     return true;
   }
 
   async function assetDel(id) {
-    assets.cache.delete(id);
+    forgetAsset(id);
     if (!assets.db) return;
     try { await idbRun('readwrite', (s) => s.delete(id)); } catch (e) {}
   }
 
   /* 没有任何条目引用的图片，启动时清掉（撤销只在本次会话内有效） */
   async function assetGC() {
-    if (!assets.db || !assets.loaded) return;
+    if (!assets.db) return;
+    const keys = await idbRun('readonly', s => s.getAllKeys()).catch(() => []);
     const used = new Set();
     state.items.forEach((it) => {
       if (typeof it.src === 'string' && it.src.indexOf('idb:') === 0) used.add(it.src.slice(4));
     });
-    const orphans = Array.from(assets.cache.keys()).filter((id) => !used.has(id));
+    const orphans = keys.filter(id => !used.has(id));
     for (const id of orphans) await assetDel(id);
   }
 
@@ -1428,10 +1489,10 @@
     return n;
   }
 
-  function imgSrc(it) {
+  async function imgSrc(it) {
     const s = it && it.src;
     if (!s) return 'assets/placeholder.svg';
-    if (s.indexOf('idb:') === 0) return assets.cache.get(s.slice(4)) || 'assets/placeholder.svg';
+    if (s.indexOf('idb:') === 0) return assetRead(s.slice(4)).catch(() => 'assets/placeholder.svg');
     return s;
   }
 
@@ -1512,6 +1573,7 @@
     });
     s.idleFoldSeconds = sanitizeIdleFold(s.idleFoldSeconds);
     if (!THEME_OPTIONS.includes(s.theme)) s.theme = DEFAULT_SETTINGS.theme;
+    if (s.density !== 'compact') s.density = DEFAULT_SETTINGS.density;
     s.shortcut = typeof s.shortcut === "string" && s.shortcut.length <= 80 ? s.shortcut : null;
     const h = Math.round(Number(s.height));
     s.height = Number.isFinite(h) && h > 0 ? h : 0;
@@ -1686,6 +1748,108 @@
   }
 
   const tabStrip = $('#tabStrip'), tabsPrev = $('#tabsPrev'), tabsNext = $('#tabsNext');
+  let tabDrag = null;
+  let ignoreTabClickUntil = 0;
+
+  function moveGroup(id, index) {
+    const old = state.groups.findIndex((g) => g.id === id);
+    if (old < 0 || index < 0 || index >= state.groups.length || index === old) return false;
+    const [group] = state.groups.splice(old, 1);
+    state.groups.splice(index, 0, group);
+    save();
+    render();
+    return true;
+  }
+
+  function clearTabMarker() {
+    tabsEl.querySelector('.tab-insert-before,.tab-insert-after')
+      ?.classList.remove('tab-insert-before', 'tab-insert-after');
+  }
+
+  function trackTabDrag(schedule = true) {
+    const drag = tabDrag;
+    if (!drag?.active) return;
+    const bar = tabsEl.getBoundingClientRect();
+    if (drag.x < bar.left + 28) tabsEl.scrollLeft -= 9;
+    else if (drag.x > bar.right - 28) tabsEl.scrollLeft += 9;
+    const others = [...tabsEl.querySelectorAll('.tab')].filter((tab) => tab !== drag.tab);
+    let next = others.findIndex((tab) => {
+      const r = tab.getBoundingClientRect();
+      return drag.x < r.left + r.width / 2;
+    });
+    clearTabMarker();
+    if (next < 0) {
+      next = others.length;
+      others.at(-1)?.classList.add('tab-insert-after');
+    } else {
+      others[next].classList.add('tab-insert-before');
+    }
+    drag.index = next;
+    if (schedule) drag.frame = requestAnimationFrame(() => trackTabDrag());
+  }
+
+  function finishTabDrag(commitOrder) {
+    const drag = tabDrag;
+    if (!drag) return;
+    tabDrag = null;
+    clearTimeout(drag.timer);
+    if (!drag.active) return;
+    cancelAnimationFrame(drag.frame);
+    drag.tab.classList.remove('tab-reorder-source');
+    document.body.classList.remove('reordering-tabs');
+    clearTabMarker();
+    if (tabsEl.hasPointerCapture(drag.pointer)) tabsEl.releasePointerCapture(drag.pointer);
+    ignoreTabClickUntil = performance.now() + 220;
+    if (commitOrder) moveGroup(drag.tab.dataset.tab, drag.index);
+    scheduleIdleFold();
+  }
+
+  tabsEl.addEventListener('pointerdown', (e) => {
+    const tab = e.target.closest('.tab');
+    if (!tab || e.button !== 0 || state.groups.length < 2 || tabDrag) return;
+    const drag = { tab, pointer: e.pointerId, x: e.clientX, y: e.clientY, active: false };
+    tabDrag = drag;
+    drag.timer = setTimeout(() => {
+      if (tabDrag !== drag || !tab.isConnected) return;
+      drag.active = true;
+      tabsEl.setPointerCapture(drag.pointer);
+      tab.classList.add('tab-reorder-source');
+      document.body.classList.add('reordering-tabs');
+      clearTimeout(closeTimer);
+      trackTabDrag();
+    }, 320);
+  });
+  tabsEl.addEventListener('pointermove', (e) => {
+    if (!tabDrag || tabDrag.pointer !== e.pointerId) return;
+    if (!tabDrag.active) {
+      if (Math.hypot(e.clientX - tabDrag.x, e.clientY - tabDrag.y) > 6) finishTabDrag(false);
+      return;
+    }
+    tabDrag.x = e.clientX;
+  });
+  tabsEl.addEventListener('pointerup', (e) => {
+    if (tabDrag?.pointer !== e.pointerId) return;
+    if (tabDrag.active) {
+      tabDrag.x = e.clientX;
+      trackTabDrag(false);
+    }
+    finishTabDrag(true);
+  });
+  tabsEl.addEventListener('pointerleave', () => {
+    if (!tabDrag?.active) finishTabDrag(false);
+  });
+  for (const type of ['pointercancel', 'lostpointercapture']) {
+    tabsEl.addEventListener(type, (e) => {
+      if (tabDrag?.pointer === e.pointerId) finishTabDrag(false);
+    });
+  }
+  window.addEventListener('blur', () => finishTabDrag(false));
+  tabsEl.addEventListener('click', (e) => {
+    if (performance.now() < ignoreTabClickUntil) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
 
   function syncTabScroll() {
     const overflow = tabStrip.clientWidth > 0 && tabsEl.scrollWidth > tabStrip.clientWidth + 1;
@@ -1721,6 +1885,7 @@
   }, { passive: false });
 
   function renderTabs() {
+    if (tabDrag?.active) finishTabDrag(false);
     const offset = tabsEl.scrollLeft;
     tabsEl.innerHTML = state.groups.map((g) => {
       const n = state.items.filter((i) => i.group === g.id).length;
@@ -1771,7 +1936,7 @@
     return `<div class="tiles">${list.map((it) => `
       <div class="tile" data-id="${esc(it.id)}" tabindex="0" role="button">
         <div class="sq" style="background:${/^#[\da-f]{6}$/i.test(it.color || '') ? it.color : '#4b5563'}"${it.app ? ` data-icon="${esc(it.app)}"` : ''}>${esc(it.mono || String(it.title || '?').slice(0, 1))}</div>
-        <div class="nm"${it.note ? ` title="${esc(it.note)}"` : ''}>${esc(it.title)}</div>
+        <div class="nm" title="${esc(it.title)}">${esc(it.title)}</div>
         <div class="c-acts">
           <button class="icon-btn" data-act="edit" title="编辑">✎</button>
           <button class="icon-btn del" data-act="del" title="删除">×</button>
@@ -1791,35 +1956,60 @@
     };
     img.src = url;
   }
-  function hydrateIcons() {
-    listEl.querySelectorAll('.sq[data-icon]').forEach((sq) => {
-      if (sq.classList.contains('has-icon')) return;
-      const target = sq.dataset.icon;
-      const link = webShortcut(target);
-      if (link) {
-        paintIcon(sq, new URL('/favicon.ico', link).href);
-        return;
+  function hydrateIcon(sq) {
+    const target = sq.dataset.icon;
+    delete sq.dataset.icon;
+    const link = webShortcut(target);
+    if (link) {
+      paintIcon(sq, new URL('/favicon.ico', link).href);
+      return;
+    }
+    if (!SH.active) return;
+    const cached = iconCache.get(target);
+    if (cached && cached.until > Date.now()) {
+      cached.promise.then((icon) => { if (icon) paintIcon(sq, icon); });
+      return;
+    }
+    if (iconCache.size >= 256) iconCache.delete(iconCache.keys().next().value);
+    const entry = { until: Date.now() + 60000, promise: SH.icon(target).catch(() => {
+      entry.until = Date.now() + 5000;
+      return null;
+    }) };
+    iconCache.set(target, entry);
+    entry.promise.then((icon) => { if (icon) paintIcon(sq, icon); });
+  }
+
+  const renderedImages = new Map();
+  const mediaObserver = new IntersectionObserver(entries => {
+    if (drawer.classList.contains('collapsed')) return;
+    for (const entry of entries) {
+      const el = entry.target;
+      if (!entry.isIntersecting || !listEl.contains(el)) continue;
+      mediaObserver.unobserve(el);
+      if (el.matches('.sq[data-icon]')) hydrateIcon(el);
+      else {
+        const item = renderedImages.get(el.dataset.preview);
+        delete el.dataset.preview;
+        if (item) imgSrc(item).then(src => {
+          if (!listEl.contains(el)) return;
+          el.onerror = () => { el.onerror = null; el.src = 'assets/placeholder.svg'; };
+          el.src = src;
+        });
       }
-      if (!SH.active) return;
-      const cached = iconCache.get(target);
-      if (cached && cached.until > Date.now()) {
-        cached.promise.then((icon) => { if (icon) paintIcon(sq, icon); });
-        return;
-      }
-      if (iconCache.size >= 256) iconCache.clear();
-      const entry = { until: Date.now() + 60000, promise: SH.icon(target).catch(() => {
-        entry.until = Date.now() + 5000;
-        return null;
-      }) };
-      iconCache.set(target, entry);
-      entry.promise.then((icon) => { if (icon) paintIcon(sq, icon); });
-    });
+    }
+  }, { root:listEl, rootMargin:'96px 0px' });
+
+  function observeMedia() {
+    mediaObserver.disconnect();
+    if (drawer.classList.contains('collapsed')) return;
+    listEl.querySelectorAll('.sq[data-icon], img[data-preview]').forEach(el => mediaObserver.observe(el));
   }
 
   function renderImages(list) {
+    for (const item of list) renderedImages.set(item.id, item);
     return `<div class="thumbs">${list.map((it) => `
       <div class="thumb" data-id="${esc(it.id)}" tabindex="0" role="button">
-        <img src="${esc(imgSrc(it))}" alt="${esc(it.title)}" loading="lazy">
+        <img data-preview="${esc(it.id)}" alt="${esc(it.title)}" decoding="async">
         <div class="cap">${esc(it.title)}</div>
         <div class="c-acts">
           <button class="icon-btn" data-act="edit" title="编辑">✎</button>
@@ -1962,6 +2152,8 @@
 
   function renderList() {
     renderTabs();
+    mediaObserver.disconnect();
+    renderedImages.clear();
     const q = state.query.trim().toLowerCase();
     document.body.classList.toggle('searching', !!q);
     /* 换分组 / 改搜索词回到顶部，否则新内容一进来就停在半截 */
@@ -1989,7 +2181,7 @@
       }
     }
     listEl.innerHTML = html || emptyBlock('group', '');
-    hydrateIcons();
+    observeMedia();
     bindCards();
     bindEmpty();
     fitPanel();
@@ -2012,8 +2204,7 @@
     /* 收起 / 隐藏时量不到尺寸，等展开后再算（收起时 panel 只剩 1px 边，别再量） */
     if (drawer.classList.contains('collapsed') || listEl.getBoundingClientRect().height <= 4) return;
     const gap = parseFloat(getComputedStyle(div).marginTop) || 0;
-    /* #list 会被 flex 拉伸，scrollHeight 不可靠；按条目元素量位置
-       （应用/图片在横排时 .tiles/.thumbs 是 display:contents，只能查 [data-id]） */
+    /* 列表会被拉伸，按条目位置计算实际内容高度。 */
     const lr = listEl.getBoundingClientRect();
     const cs = getComputedStyle(listEl);
     let contentH = 0, lastEl = null;
@@ -2033,12 +2224,9 @@
     }
     /* 面板已滚动时，元素相对可视区的坐标会整体上移，补回滚动量才是真实内容高度 */
     contentH += listEl.scrollTop || 0;
-    /* 只有仍在横滚的布局（悬浮窗宽版）要给横向滚动条留 8px */
-    const bar = document.body.classList.contains('horizontal')
-      && !document.body.classList.contains('dock') ? 8 : 0;
     let need = head.getBoundingClientRect().height
       + div.getBoundingClientRect().height + gap
-      + contentH + bar
+      + contentH
       + dock.getBoundingClientRect().height + 2;
 
     /* 设置、编辑这类长表单：面板临时长高。
@@ -2281,7 +2469,10 @@
     if (!it) return;
     const img = $('#lbImg');
     const swapping = $('#lightbox').classList.contains('on');
-    img.src = imgSrc(it);
+    img.removeAttribute('src');
+    imgSrc(it).then(src => {
+      if (lbList[lbAt] === it && $('#lightbox').classList.contains('on')) img.src = src;
+    });
     $('#lbCap').innerHTML = esc(it.title) +
       (lbList.length > 1 ? `<span class="cnt">${lbAt + 1} / ${lbList.length}</span>` : '');
     const multi = lbList.length > 1;
@@ -2604,6 +2795,7 @@
     resetSettle();
     busy();
     drawer.classList.remove('collapsed');
+    observeMedia();
     scheduleIdleFold();
     /* 窗口先撑开，面板再在窗口里长出来（反过来会被窗口边缘裁一截） */
     if (SH.active) SH.sync(true);
@@ -2612,12 +2804,13 @@
     onSettled(() => { busyOff(); fitPanel(); }, 560);
   }
 
-  function close() {
+  function close(fromPointer = false) {
     clearTimeout(closeTimer);
     if (pinned) return;
     /* 指针离开后先等一小会儿（防误触），240ms 比 300ms 更跟手 */
     closeTimer = setTimeout(() => {
-      if (SH.dragging || SH.resizing || exporting || drawer.classList.contains('collapsed')) return;
+      if (SH.dragging || SH.resizing || exporting || tabDrag?.active || drawer.classList.contains('collapsed')) return;
+      if (fromPointer && drawer.matches(':hover')) return;
       resetSettle();
       busy();
       drawer.classList.add('collapsed');
@@ -2675,7 +2868,7 @@
 
   function hoverDelay() {
     const v = state.settings.hoverDelay;
-    return Number.isFinite(v) ? Math.max(0, v) : 90;
+    return Number.isFinite(v) && v !== 90 ? Math.max(0, v) : 65;
   }
 
   function onHoverEnter() {
@@ -2723,7 +2916,7 @@
         || drawer.classList.contains('collapsed')) return;
 
     idleFoldTimer = setTimeout(() => {
-      if (drawer.matches(':hover') || pressing || SH.dragging || SH.resizing || exporting || overlayOn()
+      if (drawer.matches(':hover') || pressing || SH.dragging || SH.resizing || exporting || tabDrag?.active || overlayOn()
           || (isTyping() && document.activeElement !== $('#search'))
           || document.body.classList.contains('dropping')) {
         scheduleIdleFold();
@@ -2748,7 +2941,7 @@
     if (isTyping()) return;
     /* 没有坐标 = 面板变矮补发的事件，不是真的移出去 */
     if (!e.clientX && !e.clientY) return;
-    close();
+    close(true);
   });
 
   /* 焦点离开抽屉（点外部、Tab 走）：这时才允许收起来 */
@@ -2819,6 +3012,7 @@
     }
 
     if (e.key === 'Escape') {
+      if (tabDrag?.active) { finishTabDrag(false); return; }
       if (popOn) { closeVarPop(); return; }
       if (askResolve) { askResolve(false); return; }
       if (lbOn) { $('#lightbox').classList.remove('on'); return; }
@@ -2922,7 +3116,9 @@
     $('#mApp').value = item.app || '';
     if (g.kind === 'image') {
       const prev = $('#mImgPrev');
-      prev.src = imgSrc(item);
+      imgSrc(item).then(src => {
+        if (editingId === item.id && !$('#mImage').files.length && $('#modal').classList.contains('on')) prev.src = src;
+      });
       prev.style.display = 'block';
     }
     syncModal();
@@ -3000,11 +3196,13 @@
 
   /* 分组管理 */
   function renderGroupSheet() {
-    $('#gList').innerHTML = state.groups.map((g) => {
+    $('#gList').innerHTML = state.groups.map((g, index) => {
       const n = state.items.filter((i) => i.group === g.id).length;
       return `<div class="g-row" data-gid="${esc(g.id)}">
         <span class="g-name">${esc(g.name)}</span>
         <span class="g-cnt">${n} 项</span>
+        <button class="icon-btn" data-gact="up" title="上移" aria-label="上移 ${esc(g.name)}"${index === 0 ? ' disabled' : ''}>↑</button>
+        <button class="icon-btn" data-gact="down" title="下移" aria-label="下移 ${esc(g.name)}"${index === state.groups.length - 1 ? ' disabled' : ''}>↓</button>
         <button class="icon-btn" data-gact="rename" title="改名">✎</button>
         <button class="icon-btn del" data-gact="del" title="删除">×</button>
       </div>`;
@@ -3014,6 +3212,17 @@
         const gid = b.closest('[data-gid]').dataset.gid;
         const g = state.groups.find((x) => x.id === gid);
         if (!g) return;
+        const action = b.dataset.gact;
+        if (action === 'up' || action === 'down') {
+          const index = state.groups.indexOf(g) + (action === 'up' ? -1 : 1);
+          if (moveGroup(gid, index)) {
+            renderGroupSheet();
+            const row = $('#gList').children[index];
+            (row?.querySelector('[data-gact="' + action + '"]:enabled')
+              || row?.querySelector('[data-gact]:enabled'))?.focus({ preventScroll: true });
+          }
+          return;
+        }
         if (b.dataset.gact === 'rename') {
           const name = window.prompt('分组改名', g.name);
           if (name && name.trim()) { g.name = name.trim(); save(); render(); renderGroupSheet(); }
@@ -3084,6 +3293,23 @@
   function isHorizontal(w) { return w >= 520; }
 
   const themeButtons = [...$('#themePicker').querySelectorAll('[data-theme-choice]')];
+  const densityButtons = [...document.querySelectorAll('[data-density-choice]')];
+  function applyDensity() {
+    const density = state.settings.density;
+    document.body.dataset.density = density;
+    densityButtons.forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.densityChoice === density));
+    });
+  }
+  densityButtons.forEach(button => {
+    button.onclick = () => {
+      if (button.dataset.densityChoice === state.settings.density) return;
+      state.settings.density = button.dataset.densityChoice;
+      applyDensity();
+      fitPanel();
+      save();
+    };
+  });
   function applyTheme() {
     const selected = state.settings.theme;
     document.documentElement.dataset.theme = selected === 'system'
@@ -3106,6 +3332,7 @@
 
   function applySettings() {
     applyTheme();
+    applyDensity();
     const s = state.settings;
     const w = SH.active ? Math.min(widthFor(s.mode), Math.max(1, viewW() - 37)) : widthFor(s.mode);
     document.body.classList.toggle('float', s.mode === 'float');
@@ -3156,6 +3383,7 @@
     }
     if (SH.active) SH.topmost(!!s.topmost);
     fitPanel();
+    observeMedia();
     if (SH.active) SH.sync(true);
     scheduleIdleFold();
   }
@@ -3173,7 +3401,7 @@
   function viewH() { return SH.active ? SH.h() : window.innerHeight; }
   function viewW() { return SH.active ? SH.w() : window.innerWidth; }
   function maxPanelH() {
-    if (SH.active) return Math.max(1, viewH() - (state.settings.mode === 'float' ? 32 : 35));
+    if (SH.active) return Math.max(1, viewH() - (state.settings.mode === 'float' ? 32 : 38));
     if (state.settings.mode === 'float') return Math.min(640, viewH() - 60);
     return Math.round(viewH() * 0.72);
   }
@@ -3410,7 +3638,10 @@
   $('#hAuto').onclick = () => {
     state.settings.height = 0;
     const wasClosed = drawer.classList.contains('collapsed');
-    if (wasClosed) drawer.classList.remove('collapsed');
+    if (wasClosed) {
+      drawer.classList.remove('collapsed');
+      observeMedia();
+    }
     noAnim(220);
     fitPanel();
     const h = Math.min(maxPanelH(), Math.max(H_MIN, curPanelH() || H_MIN));
@@ -3465,16 +3696,12 @@
       if (typeof it.src !== 'string') return;
       if (it.src.indexOf('idb:') === 0) {
         imgs++;
-        bytes += (assets.cache.get(it.src.slice(4)) || '').length * 2;
-      } else if (it.src.indexOf('data:') === 0) {
-        imgs++;
-        bytes += it.src.length * 2;
-      }
+      } else if (it.src.indexOf('data:') === 0) imgs++;
     });
-    return state.items.length + ' 项 · 图片 ' + imgs + ' 张 · 约 ' + humanSize(bytes);
+    return state.items.length + ' 项 · 图片 ' + imgs + ' 张 · 数据索引约 ' + humanSize(bytes);
   }
 
-  function buildBackup() {
+  async function buildBackup() {
     const out = {
       app: 'desklet', version: 5, exportedAt: new Date().toISOString(),
       groups: state.groups.map((g) => ({ id: g.id, name: g.name, kind: g.kind })),
@@ -3482,21 +3709,23 @@
         mode: state.settings.mode, dockWidth: state.settings.dockWidth,
         sideWidth: state.settings.sideWidth, width: state.settings.width,
         opacity: state.settings.opacity, topmost: state.settings.topmost,
-        idleFoldSeconds: state.settings.idleFoldSeconds, theme: state.settings.theme
+        idleFoldSeconds: state.settings.idleFoldSeconds, theme: state.settings.theme,
+        density: state.settings.density
       },
-      items: state.items.map((it) => {
-        const o = { id: it.id, group: it.group, title: it.title, note: it.note || '', body: it.body || '' };
-        if (it.app) o.app = it.app;
-        if (it.color) o.color = it.color;
-        if (it.mono) o.mono = it.mono;
-        if (typeof it.src === 'string' && it.src.indexOf('idb:') === 0) {
-          o.srcData = assets.cache.get(it.src.slice(4)) || '';
-        } else if (it.src) {
-          o.src = it.src;
-        }
-        return o;
-      })
+      items: []
     };
+    for (const it of state.items) {
+      const o = { id: it.id, group: it.group, title: it.title, note: it.note || '', body: it.body || '' };
+      if (it.app) o.app = it.app;
+      if (it.color) o.color = it.color;
+      if (it.mono) o.mono = it.mono;
+      if (typeof it.src === 'string' && it.src.indexOf('idb:') === 0) {
+        o.srcData = await assetRead(it.src.slice(4));
+      } else if (it.src) {
+        o.src = it.src;
+      }
+      out.items.push(o);
+    }
     return JSON.stringify(out, null, 2);
   }
 
@@ -3542,6 +3771,325 @@
       $('#expBtn').disabled = false;
       scheduleIdleFold();
     }
+  }
+
+
+  function installLanUI() {
+    const button = $('#lanBtn'), modal = $('#lanModal');
+    const call = (name, data) => window.__TAURI__.core.invoke('lan_' + name, data);
+    let current = null, lastQr = '', listKey = '', busy = false, refreshId = 0;
+    const draft = [];
+    const composer = $('#lanText'), send = $('#lanSendText');
+    const imageLoads = new WeakMap();
+    const images = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        images.unobserve(entry.target);
+        imageLoads.get(entry.target)?.().catch(() => {});
+      }
+    }, { root:$('#lanItems'), rootMargin:'180px' });
+    const message = (text) => { $('#lanMessage').textContent = text; };
+    const setBusy = async (task) => {
+      if (busy) return;
+      busy = true;
+      send.disabled = true;
+      try { await task(); }
+      catch (err) { message(String(err?.message || err)); }
+      finally { busy = false; send.disabled = false; await refresh(); }
+    };
+    async function refresh() {
+      const id = ++refreshId;
+      const s = await call('status').catch(() => null);
+      if (id !== refreshId) return;
+      current = s;
+      const running = !!s?.running, connected = !!s?.connected;
+      button.classList.toggle('lan-active', running);
+      $('#lanSetup').hidden = running;
+      $('#lanRoom').hidden = !running;
+      $('#lanNotice').hidden = connected;
+      if (!running) {
+        if (lastQr || listKey) {
+          composer.value = '';
+          draft.length = 0;
+          showDraft();
+          showItems([]);
+          $('#lanQr').removeAttribute('src');
+          $('#lanUrl').value = '';
+        }
+        lastQr = ''; listKey = ''; return;
+      }
+      $('#lanState').textContent = connected
+        ? '手机已连接'
+        : '等待手机连接';
+      $('#lanPair').hidden = !s.pending;
+      $('#lanPairAddress').textContent = s.pending ? '手机地址 ' + s.pending[1] : '';
+      $('#lanInvite').hidden = connected;
+      $('#lanSend').hidden = !connected;
+      if (!connected && s.url !== lastQr) {
+        lastQr = s.url;
+        $('#lanUrl').value = s.url;
+        const url = s.url;
+        const qr = await call('qr').catch(() => '');
+        if (lastQr === url) $('#lanQr').src = qr;
+        if (id !== refreshId) return;
+      }
+      const key = JSON.stringify(s.items);
+      if (key !== listKey) {
+        listKey = key;
+        showItems(s.items);
+      }
+    }
+    function action(row, title, task) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn'; b.textContent = title;
+      b.onclick = () => {
+        const menu = b.closest('.lan-menu');
+        if (menu) menu.open = false;
+        setBusy(task);
+      };
+      row.append(b);
+    }
+    function showItems(items) {
+      const box = $('#lanItems');
+      const atBottom = box.scrollHeight - box.clientHeight - box.scrollTop < 36;
+      const ids = new Set(items.map(item => item.id));
+      for (const row of [...box.children]) {
+        if (ids.has(row.dataset.id)) continue;
+        images.unobserve(row);
+        row.remove();
+      }
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'lan-empty';empty.textContent = '发条消息，或添加图片、文件';
+        box.append(empty);
+        return;
+      }
+      const existing = new Set([...box.children].map(row => row.dataset.id));
+      for (const item of items) {
+        if (existing.has(item.id)) continue;
+        const row = document.createElement('div');
+        row.className = 'lan-item' + (item.incoming ? '' : ' lan-mine');
+        row.dataset.id = item.id;
+        row.setAttribute('aria-label', item.incoming ? '来自手机' : '我发送的消息');
+        const bubble = document.createElement('div');bubble.className = 'lan-bubble';
+        const menu = document.createElement('details');menu.className = 'lan-menu';
+        const more = document.createElement('summary');more.textContent = '⋯';more.setAttribute('aria-label', '消息操作');
+        const controls = document.createElement('div');controls.className = 'lan-actions';
+        const read = () => call('read', { id:item.id });
+        const title = document.createElement('strong');
+        title.textContent = item.name;
+        const meta = document.createElement('small');
+        meta.textContent = ' ' + (item.size < 1024 ? item.size + ' B' : Math.ceil(item.size / 1024) + ' KB');
+        if (item.kind === 'text' || item.kind === 'link') {
+          const preview = document.createElement(item.kind === 'link' ? 'button' : 'pre');
+          preview.textContent = item.preview;
+          if (item.kind === 'link') {
+            preview.type = 'button';preview.className = 'lan-link';
+            preview.onclick = () => setBusy(async () => {
+              const url = webShortcut(await read());
+              if (!url) throw Error('这个网址不可打开。');
+              await SH.launch(url.href);
+            });
+          }
+          bubble.append(preview);
+          if (new TextEncoder().encode(item.preview).length !== item.size || item.preview.endsWith('…'))
+            action(controls, '查看全文', async () => { preview.textContent = await read(); });
+          action(controls, '复制', async () => {
+            await navigator.clipboard.writeText(await read());
+            message('文字已复制。');
+          });
+        } else {
+          if (item.kind === 'image') {
+            const preview = document.createElement('img');
+            preview.alt = item.name;preview.title = item.name;
+            const loading = document.createElement('span');
+            loading.textContent = '图片 · ' + item.name;
+            bubble.append(loading);
+            const show = async () => {
+              if (preview.isConnected) return;
+              try {
+                preview.src = await read();
+                await preview.decode();
+                if (!row.isConnected || preview.isConnected) return;
+                const follow = box.scrollHeight - box.clientHeight - box.scrollTop < 36;
+                loading.replaceWith(preview);
+                if (follow) box.scrollTop = box.scrollHeight;
+              } catch { loading.textContent = '无法显示 · ' + item.name; }
+            };
+            imageLoads.set(row, show);
+            images.observe(row);
+            action(controls, '复制图片', async () => {
+              const image = new Image();image.src = await read();
+              await image.decode();
+              const { naturalWidth:width, naturalHeight:height } = image;
+              if (width * height > 24000000) throw Error('图片尺寸过大，请使用复制文件或另存为。');
+              const canvas = document.createElement('canvas');
+              canvas.width = width;canvas.height = height;
+              const context = canvas.getContext('2d', { willReadFrequently:true });
+              context.drawImage(image, 0, 0);
+              const pixels = context.getImageData(0, 0, width, height).data;
+              const bitmap = new Uint8Array(8 + pixels.length);
+              const header = new DataView(bitmap.buffer);
+              header.setUint32(0, width, true);header.setUint32(4, height, true);
+              bitmap.set(pixels, 8);
+              await window.__TAURI__.core.invoke('copy_bitmap', bitmap);
+              message('图片已复制。');
+            });
+          } else {
+            const card = document.createElement('div');card.className = 'lan-file';
+            const icon = document.createElement('span');icon.className = 'lan-file-icon';
+            icon.textContent = '▤';icon.setAttribute('aria-hidden', 'true');
+            const info = document.createElement('div');info.append(title, meta);
+            card.append(icon, info);bubble.append(card);
+            if (item.preview !== undefined) {
+              const preview = document.createElement('pre');
+              preview.className = 'lan-excerpt';preview.textContent = item.preview;
+              bubble.append(preview);
+              action(controls, '查看全文', async () => {
+                preview.textContent = await read();preview.classList.remove('lan-excerpt');
+              });
+            }
+          }
+          action(controls, '复制文件', async () => {
+            await call('copy_file', { id:item.id });
+            message('文件已复制，请在断开前粘贴。');
+          });
+        }
+        if (item.incoming) {
+          action(controls, '另存为', async () => {
+            const saved = await call('save', { id:item.id });
+            if (saved) message('已保存到 ' + saved);
+          });
+          if (item.kind !== 'file') action(controls, '加入分组', async () => {
+            const value = await call('read', { id:item.id });
+            if (item.kind === 'image') await addImageData(value, item.name);
+            else if (item.kind === 'link') {
+              const url = webShortcut(value);
+              if (!url) throw Error('这个网址不可打开。');
+              addAppPath(url.href, item.name);
+            } else addTextItem(value);
+            message('已加入分组。');
+          });
+        }
+        action(controls, '移除', async () => { await call('remove', { id:item.id }); message('已从临时区移除。'); });
+        menu.append(more, controls);
+        bubble.append(menu);
+        row.append(bubble);
+        box.append(row);
+      }
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    }
+    function sendText(text, name) {
+      const url = webShortcut(text);
+      return call('send', { kind:url?'link':'text', name:name || (url ? url.hostname : '文字'), contents:url ? url.href : text });
+    }
+    function fillChoices() {
+      const select = $('#lanExisting');
+      select.replaceChildren(new Option('从 Desklet 选择…', ''));
+      for (const item of state.items) {
+        if (item.body || item.src || webShortcut(item.app)) select.add(new Option(item.title, item.id));
+      }
+    }
+    button.hidden = false;
+    button.onclick = () => setBusy(async () => {
+      modal.classList.add('on');
+      fillChoices();
+      fitPanel();
+      const ips = await call('addresses');
+      const select = $('#lanIp');
+      select.replaceChildren(...ips.map(ip => new Option(ip, ip)));
+      $('#lanStart').disabled = !ips.length;
+      if (!ips.length) message('未找到局域网 IPv4 地址，请先连接 Wi‑Fi 或以太网。');
+    });
+    $('#lanClose').onclick = () => { modal.classList.remove('on');button.focus(); };
+    $('#lanStart').onclick = () => setBusy(async () => {
+      await call('start', { ip:$('#lanIp').value });message('');
+    });
+    $('#lanStop').onclick = () => setBusy(async () => {
+      await call('stop');message('已断开，临时内容已清理。');
+    });
+    for (const [selector,accept] of [['#lanAccept',true],['#lanReject',false]]) {
+      $(selector).onclick = () => setBusy(async () => {
+        if (!current?.pending) return;
+        await call('approve', { id:current.pending[0], accept });
+        message(accept?'已连接。':'已拒绝本次请求。');
+      });
+    }
+    function showDraft() {
+      const box = $('#lanDraft');
+      box.replaceChildren();
+      draft.forEach((file, index) => {
+        const chip = document.createElement('button');
+        const name = typeof file === 'string' ? file.split(/[\\/]/).pop() : file.name;
+        chip.type = 'button';chip.className = 'btn';chip.textContent = name + ' ×';
+        chip.setAttribute('aria-label', '移除附件 ' + name);
+        chip.onclick = () => { if (!busy) { draft.splice(index, 1);showDraft(); } };
+        box.append(chip);
+      });
+    }
+    function attach(files) {
+      if (busy || !current?.connected) return;
+      if (files.some(f => typeof f !== 'string' && (!f.size || f.size > 32*1024*1024))) {
+        message('文件为空或超过 32 MB。');return;
+      }
+      draft.push(...files);showDraft();composer.focus();
+    }
+    $('#lanAttach').onclick = () => { if (!busy) $('#lanFile').click(); };
+    $('#lanFile').onchange = () => { attach([...$('#lanFile').files]);$('#lanFile').value = ''; };
+    modal.addEventListener('paste', async e => {
+      if (!current?.connected || !e.clipboardData || busy) return;
+      const files = [...e.clipboardData.files];
+      if (files.length) { e.preventDefault();attach(files);return; }
+      if (!e.clipboardData.getData('text/plain')) {
+        const paths = await SH.clipboardPaths().catch(() => []);
+        if (modal.classList.contains('on') && paths.length) attach(paths);
+      }
+    });
+    composer.onkeydown = e => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+        e.preventDefault();send.click();
+      }
+    };
+    send.onclick = () => setBusy(async () => {
+      const value = composer.value;
+      if (!value.trim() && !draft.length) throw Error('请输入消息或添加附件。');
+      if (value.trim()) {
+        await sendText(value.trim());
+        if (composer.value === value) composer.value = '';
+      }
+      while (draft.length) {
+        const file = draft[0];
+        if (typeof file === 'string') await call('send_path', { path:file });
+        else {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const parts = [];
+          for (let i=0;i<bytes.length;i+=24576) parts.push(btoa(String.fromCharCode(...bytes.subarray(i,i+24576))));
+          await call('send', { name:file.name,kind:'file',contents:parts.join('') });
+        }
+        draft.shift();showDraft();
+      }
+      message('已发送。');
+    });
+    $('#lanSendExisting').onclick = () => setBusy(async () => {
+      const item = state.items.find(i => i.id === $('#lanExisting').value);
+      if (!item) throw Error('请先选择一项。');
+      if (item.src) {
+        const source = await imgSrc(item);
+        let type = source.match(/^data:image\/(png|jpeg|gif|webp);base64,/)?.[1];
+        if (!type) throw Error('这张图不是可发送的本地图片，请用文件方式发送。');
+        await call('send', { name:item.title+'.'+type,kind:'file',contents:source.split(',')[1] });
+      } else await sendText(item.app || item.body,item.title);
+      message('已发送。');
+    });
+    SH.handlers.lanDrop = (paths) => {
+      if (!modal.classList.contains('on')) return false;
+      if (current?.connected) attach(paths);
+      else message('请先连接手机。');
+      return true;
+    };
+    setInterval(() => {
+      if (modal.classList.contains('on') || current?.running) refresh();
+    }, 1500);
   }
 
   function exportBackup() {
@@ -3608,6 +4156,7 @@
     $('#search').value = '';
     if (d.settings && typeof d.settings === 'object') {
       if (THEME_OPTIONS.includes(d.settings.theme)) state.settings.theme = d.settings.theme;
+      if (['compact', 'comfortable'].includes(d.settings.density)) state.settings.density = d.settings.density;
       if (d.settings.idleFoldSeconds !== undefined) {
         state.settings.idleFoldSeconds = sanitizeIdleFold(d.settings.idleFoldSeconds);
       }
@@ -3728,13 +4277,17 @@
         const maxHeight = Math.min(maxPanelH(), height + (north ? t - my : south ? my + mh - b : 0) / scale);
         const w = east || west ? clamp(Math.round(width + (east ? dx : -dx)), 320, maxWidth) : width;
         const h = north || south ? clamp(Math.round(height + (south ? dy : -dy)), mode === 'float' ? 240 : H_MIN, maxHeight) : height;
-        if (w === session.w && h === session.h) return;
+        const widthChanged = w !== session.w;
+        const heightChanged = h !== session.h;
+        if (!widthChanged && !heightChanged) return;
         session.w = w;
         session.h = h;
         const dw = w - width, dh = h - height;
-        document.body.style.setProperty('--pw', w + 'px');
-        document.body.classList.toggle('horizontal', isHorizontal(w));
-        if (north || south) drawer.style.setProperty(mode === 'float' ? '--fh' : '--ph', h + 'px');
+        if (widthChanged) {
+          document.body.style.setProperty('--pw', w + 'px');
+          document.body.classList.toggle('horizontal', isHorizontal(w));
+        }
+        if (heightChanged) drawer.style.setProperty(mode === 'float' ? '--fh' : '--ph', h + 'px');
         const anchor = mode === 'float'
           ? [r - 1 + (east ? dw * scale : 0), t - (north ? dh * scale : 0)]
           : isSideMode(mode) ? null
@@ -3743,8 +4296,17 @@
       })();
       try { await session.pending; }
       finally { session.pending = null; }
-      if (!session.ending && session.moves !== moves) await placePanel(session);
+      if (!session.ending && session.moves !== moves) schedulePanel(session);
     };
+
+    function schedulePanel(session) {
+      if (session.frame || session.pending) return;
+      session.frame = requestAnimationFrame(async () => {
+        await session.ready;
+        session.frame = 0;
+        if (!session.ending) await placePanel(session);
+      });
+    }
 
     for (const edge of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
       const grip = document.createElement('span');
@@ -3773,12 +4335,7 @@
         const session = drag;
         if (!session || session.pointer !== e.pointerId) return;
         session.moves++;
-        if (session.frame) return;
-        session.frame = requestAnimationFrame(async () => {
-          session.frame = 0;
-          await session.ready;
-          if (drag === session) await placePanel(session);
-        });
+        schedulePanel(session);
       });
       const finish = async (e) => {
         const session = drag;
@@ -3796,7 +4353,8 @@
         SH.resizing = false;
         pressing = false;
         document.body.classList.remove('edge-resizing');
-        fitPanel();
+        if (state.settings.height) syncMoreSoon();
+        else fitPanel();
         scheduleIdleFold();
         if (w !== width || h !== height) {
           save();
@@ -3890,7 +4448,9 @@
         foldUp();
       }
     };
+    installLanUI();
     SH.handlers.drop = async ({ paths, text }) => {
+      if (paths?.length && SH.handlers.lanDrop?.(paths)) return;
       const added = paths?.length && await addNativePaths(paths);
       if (!added && !await addShortcutText(text)) toast('没拿到可打开的链接或文件路径。');
     };
@@ -3904,7 +4464,6 @@
     const guard = setTimeout(() => { if (!done) assets.fallback = true; }, 2500);
     assets.db = await idbOpen();
     if (assets.db) {
-      await assetsLoadAll();
       let moved = 0;
       for (const it of state.items) {
         if (typeof it.src === 'string' && it.src.indexOf('data:image/') === 0) {
@@ -3912,14 +4471,13 @@
           if (await assetPut(id, it.src)) { it.src = 'idb:' + id; moved++; }
         }
       }
-      if (moved) save();
+      if (moved) { save(); render(); }
       await assetGC();
     } else {
       assets.fallback = true;
     }
     done = true;
     clearTimeout(guard);
-    render();
   })();
 })();
 </script>

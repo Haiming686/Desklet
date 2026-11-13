@@ -80,17 +80,35 @@ html.app body.float .drawer.collapsed ~ .ball:hover {
   opacity: 1;
 }
 
-/* 贴上边收起时只留把手那么宽：760px 宽的窄条里只有中间 210px 看得见，
-   但整条都能触发展开，鼠标扫过屏幕顶部就会莫名弹出 */
-html.app body.dock .drawer.collapsed { width: 210px; }
+/* 上下贴边先按原宽度裁切高度，动画结束后才收紧到把手的宽度。 */
+html.app body.dock .drawer.collapsed {
+  height: min(var(--handle-h), 100vh);
+}
+html.app body.dock:not(.drawer-busy) .drawer.collapsed {
+  width: min(210px, 100vw);
+}
+html.app body.dock .drawer.collapsed .handle {
+  width: min(210px, 100%);
+}
+html.app body.float .drawer.collapsed ~ .ball {
+  --ball-visible: min(46px, max(1px, calc(100vw - 8px)), max(1px, calc(100vh - 8px)));
+  width: var(--ball-visible);
+  height: var(--ball-visible);
+}
 
 /* 贴边/侧边：窗口就是面板的边界，抽屉顶到窗口内沿 */
-html.app body.dock .drawer { top: 0; }
+html.app body.dock:not(.edge-bottom) .drawer { top: 0; }
 body.dock.edge-bottom .drawer {
   top: auto;
   bottom: 0;
   flex-direction: column-reverse;
   border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+body.dock.edge-bottom .drawer::after {
+  top: 1px;
+  bottom: auto;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: linear-gradient(var(--panel), transparent);
 }
 body.edge-bottom .panel {
   border: 1px solid var(--edge);

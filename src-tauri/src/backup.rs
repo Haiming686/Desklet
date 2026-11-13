@@ -13,13 +13,13 @@ use windows_sys::Win32::UI::Controls::Dialogs::{
     OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
 };
 
-fn choose_destination(owner: isize, filename: &str) -> Result<Option<PathBuf>, String> {
+fn choose_destination(owner: isize, filename: &str, backup: bool) -> Result<Option<PathBuf>, String> {
     let mut path = vec![0u16; 32768];
     let name: Vec<u16> = filename.encode_utf16().collect();
     path[..name.len()].copy_from_slice(&name);
 
-    let filter: Vec<u16> = "JSON backup (*.json)\0*.json\0\0".encode_utf16().collect();
-    let title: Vec<u16> = "导出 Desklet 备份\0".encode_utf16().collect();
+    let filter: Vec<u16> = (if backup { "JSON backup (*.json)\0*.json\0\0" } else { "All files (*.*)\0*.*\0\0" }).encode_utf16().collect();
+    let title: Vec<u16> = (if backup { "导出 Desklet 备份\0" } else { "Desklet 互传 · 另存为\0" }).encode_utf16().collect();
     let extension = [b'j' as u16, b's' as u16, b'o' as u16, b'n' as u16, 0];
     let mut dialog = OPENFILENAMEW {
         lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
@@ -29,7 +29,7 @@ fn choose_destination(owner: isize, filename: &str) -> Result<Option<PathBuf>, S
         lpstrFile: path.as_mut_ptr(),
         nMaxFile: path.len() as u32,
         lpstrTitle: title.as_ptr(),
-        lpstrDefExt: extension.as_ptr(),
+        lpstrDefExt: if backup { extension.as_ptr() } else { std::ptr::null() },
         Flags: OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST,
         ..Default::default()
     };
@@ -46,10 +46,14 @@ pub async fn save_backup(window: WebviewWindow, filename: String, contents: Stri
     if filename.is_empty() || filename.len() > 120 || filename.contains(['\\', '/', ':', '\0']) {
         return Err("备份文件名无效。".into());
     }
+    save_bytes(window, filename, contents.into_bytes(), true).await
+}
+
+pub async fn save_bytes(window: WebviewWindow, filename: String, contents: Vec<u8>, backup: bool) -> Result<Option<String>, String> {
     let owner = super::hwnd_of(&window);
     let (tx, mut rx) = tauri::async_runtime::channel(1);
     window.run_on_main_thread(move || {
-        let _ = tx.try_send(choose_destination(owner, &filename));
+        let _ = tx.try_send(choose_destination(owner, &filename, backup));
     }).map_err(|_| "无法打开保存对话框")?;
     let Some(path) = rx.recv().await.ok_or("保存对话框未返回")?? else {
         return Ok(None);
@@ -59,9 +63,9 @@ pub async fn save_backup(window: WebviewWindow, filename: String, contents: Stri
         let parent = path.parent().ok_or("保存位置无效")?;
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
         let temp = parent.join(format!(".desklet-{}-{stamp}.tmp", std::process::id()));
-        let write_error = |err: std::io::Error| format!("无法写入备份：{err}");
+        let write_error = |err: std::io::Error| format!("无法写入文件：{err}");
         let mut file = OpenOptions::new().create_new(true).write(true).open(&temp).map_err(write_error)?;
-        let write_result = file.write_all(contents.as_bytes()).and_then(|_| file.sync_all());
+        let write_result = file.write_all(&contents).and_then(|_| file.sync_all());
         drop(file);
         if let Err(err) = write_result.and_then(|_| fs::rename(&temp, &path)) {
             let _ = fs::remove_file(&temp);

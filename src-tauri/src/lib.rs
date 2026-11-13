@@ -6,6 +6,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 mod backup;
+mod lan;
 mod icons;
 mod shortcuts;
 
@@ -37,10 +38,14 @@ struct POINT {
 
 #[link(name = "user32")]
 extern "system" {
+    fn MonitorFromWindow(hwnd: isize, flags: u32) -> isize;
     fn MonitorFromPoint(pt: POINT, flags: u32) -> isize;
     fn GetMonitorInfoW(hmonitor: isize, lpmi: *mut MONITORINFO) -> i32;
     fn SetWindowPos(hwnd: isize, after: isize, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
     fn GetForegroundWindow() -> isize;
+    fn GetWindow(hwnd: isize, command: u32) -> isize;
+    fn GetWindowLongW(hwnd: isize, index: i32) -> i32;
+    fn IsIconic(hwnd: isize) -> i32;
     fn SetForegroundWindow(hwnd: isize) -> i32;
     fn BringWindowToTop(hwnd: isize) -> i32;
     fn AttachThreadInput(id_attach: u32, id_attach_to: u32, f_attach: i32) -> i32;
@@ -61,6 +66,11 @@ extern "system" {
 #[link(name = "shcore")]
 extern "system" {
     fn GetDpiForMonitor(hmon: isize, dpi_type: i32, dpi_x: *mut u32, dpi_y: *mut u32) -> i32;
+}
+
+#[link(name = "dwmapi")]
+extern "system" {
+    fn DwmGetWindowAttribute(hwnd: isize, attribute: u32, value: *mut u32, size: u32) -> i32;
 }
 
 #[link(name = "shell32")]
@@ -90,6 +100,9 @@ const SWP_NOACTIVATE: u32 = 0x0010;
 const SWP_FRAMECHANGED: u32 = 0x0020;
 const HWND_TOPMOST: isize = -1;
 const HWND_NOTOPMOST: isize = -2;
+const GW_HWNDPREV: u32 = 3;
+const GWL_EXSTYLE: i32 = -20;
+const WS_EX_TOPMOST: i32 = 0x0008;
 const MONITOR_DEFAULTTONEAREST: u32 = 2;
 const MONITOR_DEFAULTTOPRIMARY: u32 = 1;
 const MONITOR_DEFAULTTONULL: u32 = 0;
@@ -101,6 +114,7 @@ struct ShellState {
     // Physical pixels: floating top-right interior point or dock drop point.
     anchor: Mutex<Option<(f64, f64)>>,
     dragging: AtomicBool,
+    topmost: AtomicBool,
     summon_shortcut: Mutex<Option<Shortcut>>,
     /* 最后一次应用的逻辑几何：DPI 变化后按它重放一遍 */
     last_geo: Mutex<(String, f64, f64)>,
@@ -255,7 +269,13 @@ fn apply_geo(
 fn apply_geo_inner(window: &WebviewWindow, state: &ShellState, mode: &str, w: f64, h: f64) {
     let anchor = *state.anchor.lock().unwrap();
     let monitor = target_monitor(anchor);
-    let scale = monitor_scale(monitor);
+    let hwnd = hwnd_of(window);
+    // Once the window is on the target display, prefer its effective DPI.
+    let scale = if unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) } == monitor {
+        dpi_scale(hwnd)
+    } else {
+        monitor_scale(monitor)
+    };
     let (mx, my, mw, mh) = monitor_work(monitor);
     let pw = (w * scale).round().clamp(1.0, mw);
     let ph = if h == 0.0 { mh } else { (h * scale).round().clamp(1.0, mh) };
@@ -293,11 +313,10 @@ fn set_float_pos(state: tauri::State<'_, ShellState>, window: WebviewWindow, x: 
     *state.anchor.lock().unwrap() = (monitor != 0).then_some((x, y));
 }
 
-#[tauri::command]
-fn set_topmost(window: WebviewWindow, on: bool) {
+fn apply_topmost(hwnd: isize, on: bool) {
     unsafe {
         SetWindowPos(
-            hwnd_of(&window),
+            hwnd,
             if on { HWND_TOPMOST } else { HWND_NOTOPMOST },
             0,
             0,
@@ -306,6 +325,61 @@ fn set_topmost(window: WebviewWindow, on: bool) {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
     }
+}
+
+#[tauri::command]
+fn set_topmost(window: WebviewWindow, state: tauri::State<'_, ShellState>, on: bool) {
+    state.topmost.store(on, Ordering::Relaxed);
+    apply_topmost(hwnd_of(&window), on);
+}
+
+fn is_topmost(hwnd: isize) -> bool {
+    (unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) }) & WS_EX_TOPMOST != 0
+}
+
+fn is_cloaked(hwnd: isize) -> bool {
+    const DWMWA_CLOAKED: u32 = 14;
+    let mut cloaked = 0;
+    (unsafe { DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut cloaked, 4) }) >= 0 && cloaked != 0
+}
+
+fn covered_by_topmost(hwnd: isize) -> bool {
+    let Some(ours) = window_rect(hwnd) else { return false; };
+    let mut above = hwnd;
+    for _ in 0..256 {
+        above = unsafe { GetWindow(above, GW_HWNDPREV) };
+        if above == 0 { break; }
+        if !is_topmost(above) || !is_shown(above) || unsafe { IsIconic(above) } != 0 {
+            continue;
+        }
+        let Some(theirs) = window_rect(above) else { continue; };
+        if ours.left >= theirs.right || ours.right <= theirs.left
+            || ours.top >= theirs.bottom || ours.bottom <= theirs.top || is_cloaked(above) {
+            continue;
+        }
+        let mut pid = 0;
+        unsafe { GetWindowThreadProcessId(above, &mut pid); }
+        // Keep Desklet's own dialogs above the panel.
+        if pid != std::process::id() { return true; }
+    }
+    false
+}
+
+fn keep_topmost(window: &WebviewWindow) {
+    let state = window.state::<ShellState>();
+    if !state.topmost.load(Ordering::Relaxed) || state.dragging.load(Ordering::Relaxed) {
+        return;
+    }
+    let hwnd = hwnd_of(window);
+    if !is_shown(hwnd) || unsafe { IsIconic(hwnd) } != 0 || is_cloaked(hwnd) { return; }
+    if (!is_topmost(hwnd) || covered_by_topmost(hwnd)) && !fullscreen_app() {
+        apply_topmost(hwnd, true);
+    }
+}
+
+#[tauri::command]
+fn reset_viewport_zoom(window: WebviewWindow) -> Result<(), String> {
+    window.set_zoom(1.0).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -460,20 +534,38 @@ fn set_autostart(app: tauri::AppHandle, on: bool) -> bool {
     al.is_enabled().unwrap_or(false)
 }
 
-const SNAP_DISTANCE: f64 = 28.0;
+const SNAP_DISTANCE: f64 = 48.0;
+const WINDOW_SNAP_DISTANCE: f64 = 18.0;
 
-fn snap_mode(point: POINT, work: (f64, f64, f64, f64), scale: f64) -> &'static str {
+fn snap_mode(point: POINT, before: RECT, after: RECT, work: (f64, f64, f64, f64), scale: f64) -> &'static str {
     let (x, y) = (f64::from(point.x), f64::from(point.y));
     let (left, top, w, h) = work;
-    let edges = [
-        ("dock", y - top), ("bottom", top + h - y),
-        ("left", x - left), ("side", left + w - x),
-    ];
-    edges.into_iter()
+    let (right, bottom) = (left + w, top + h);
+    let edges = [("dock", y - top), ("bottom", bottom - y), ("left", x - left), ("side", right - x)];
+    if let Some((edge, _)) = edges.into_iter()
         .map(|(edge, distance)| (edge, distance.max(0.0)))
         .filter(|(_, distance)| *distance <= SNAP_DISTANCE * scale)
         .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map_or("float", |(edge, _)| edge)
+    {
+        return edge;
+    }
+
+    // Follow the leading edge when the grab point is far inside a large panel.
+    let dx = after.left - before.left;
+    let dy = after.top - before.top;
+    let (edge, previous_gap, gap) = if dx.abs() > dy.abs() {
+        if dx < 0 {
+            ("left", f64::from(before.left) - left, f64::from(after.left) - left)
+        } else {
+            ("side", right - f64::from(before.right), right - f64::from(after.right))
+        }
+    } else if dy < 0 {
+        ("dock", f64::from(before.top) - top, f64::from(after.top) - top)
+    } else {
+        ("bottom", bottom - f64::from(before.bottom), bottom - f64::from(after.bottom))
+    };
+    let limit = WINDOW_SNAP_DISTANCE * scale;
+    if previous_gap > limit && gap <= limit { edge } else { "float" }
 }
 
 fn drag_to_edge(window: &WebviewWindow, state: &ShellState) -> Option<&'static str> {
@@ -504,14 +596,14 @@ fn drag_to_edge(window: &WebviewWindow, state: &ShellState) -> Option<&'static s
     let monitor = unsafe { MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST) };
     let scale = monitor_scale(monitor);
     let work = monitor_work(monitor);
-    let mode = snap_mode(cursor, work, scale);
+    let mode = snap_mode(cursor, before, after, work, scale);
     let (x, y) = (f64::from(cursor.x), f64::from(cursor.y));
     let (mx, my, mw, mh) = work;
     let old_float = state.last_geo.lock().unwrap().0 == "float";
     let anchor = if mode == "float" && old_float {
         (f64::from(after.right - 1), f64::from(after.top))
     } else if mode == "float" {
-        (x + SNAP_DISTANCE * scale, y - 16.0 * scale)
+        (x + 28.0 * scale, y - 16.0 * scale)
     } else {
         (x, y)
     };
@@ -649,7 +741,10 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                 let now = al.is_enabled().unwrap_or(false);
                 let _ = auto2.set_checked(now);
             }
-            "quit" => app.exit(0),
+            "quit" => {
+                lan::lan_stop(app.state());
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -718,7 +813,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(gs)
-        .manage(ShellState::default())
+        .manage(ShellState { topmost: AtomicBool::new(true), ..Default::default() })
+        .manage(lan::Lan::default())
         .invoke_handler(tauri::generate_handler![
             work_area_cmd,
             apply_geo,
@@ -728,6 +824,7 @@ pub fn run() {
             set_float_pos,
             set_topmost,
             reveal,
+            reset_viewport_zoom,
             restore_focus,
             hide_window,
             quit_app,
@@ -736,12 +833,13 @@ pub fn run() {
             file_icon,
             local_shortcut,
             shortcuts::clipboard_paths,
+            shortcuts::copy_bitmap,
             shortcuts::setup_shortcut_drop,
             get_autostart,
             set_autostart,
             start_drag,
             fullscreen_app,
-            backup::save_backup,
+            backup::save_backup, lan::lan_addresses, lan::lan_start, lan::lan_status, lan::lan_qr, lan::lan_stop, lan::lan_approve, lan::lan_send, lan::lan_send_path, lan::lan_read, lan::lan_save, lan::lan_copy_file, lan::lan_remove,
             get_shortcut,
             set_shortcut
         ])
@@ -754,8 +852,15 @@ pub fn run() {
                 Err(err) => eprintln!("[desklet] 全局快捷键注册失败: {err}"),
             }
             if let Some(w) = app.get_webview_window("main") {
-                let _ = w.set_always_on_top(true);
                 let _ = w.set_skip_taskbar(true);
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        if !w.state::<ShellState>().topmost.load(Ordering::Relaxed) { continue; }
+                        let window = w.clone();
+                        if w.run_on_main_thread(move || keep_topmost(&window)).is_err() { break; }
+                    }
+                });
             }
             Ok(())
         })

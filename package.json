@@ -1,7 +1,7 @@
 {
   "name": "desklet-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.6",
   "description": "Desklet — 桌面话术抽屉",
   "scripts": {
     "dev": "tauri dev --config src-tauri/tauri.dev.json",
